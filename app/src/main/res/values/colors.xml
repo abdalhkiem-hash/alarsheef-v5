@@ -1,0 +1,4 @@
+<resources>
+    <!-- مستخدم فقط كخلفية أيقونة التطبيق؛ ألوان الواجهة كلها في ui/theme/Color.kt -->
+    <color name="teal">#12A594</color>
+</resources>

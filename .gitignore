@@ -1,0 +1,17 @@
+*.iml
+.gradle
+/build
+/app/build
+/local.properties
+/.idea/
+.DS_Store
+/captures
+.externalNativeBuild
+.cxx
+**/build/tmp/
+**/build/intermediates/
+**/build/kspCaches/
+**/build/outputs/
+**/build/snapshot/
+**/build/test-results/
+**/build/reports/

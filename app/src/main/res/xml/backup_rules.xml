@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ملفات الأرشيف وقاعدة البيانات يُستثنيان معًا.
+  لو استُثنيت الملفات فقط، الاستعادة تعطي سجلات تشير لصور غير موجودة.
+-->
+<full-backup-content>
+    <exclude domain="file" path="archive/" />
+    <exclude domain="database" path="arsheef.db" />
+    <exclude domain="database" path="arsheef.db-shm" />
+    <exclude domain="database" path="arsheef.db-wal" />
+</full-backup-content>
