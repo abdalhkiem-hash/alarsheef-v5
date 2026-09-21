@@ -62,6 +62,7 @@ import com.alarsheef.archive.porter.PorterResult
 import com.alarsheef.archive.ui.components.AddFab
 import com.alarsheef.archive.ui.components.ConfirmDeleteDialog
 import com.alarsheef.archive.ui.components.CustomLabelDialog
+import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.components.rememberScopeSuggestions
 import com.alarsheef.archive.ui.theme.Teal
@@ -89,6 +90,7 @@ fun DayScreen(
     var pendingExportDay by remember { mutableStateOf<Int?>(null) }
     var pendingTreeTarget by remember { mutableStateOf<String?>(null) }
     var showAddDayDialog by remember { mutableStateOf(false) }
+    var showNewFolderDialog by remember { mutableStateOf(false) }
     var newDayNumber by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     val labelSuggestions = rememberScopeSuggestions(repository, labelDialogScope)
@@ -195,7 +197,7 @@ fun DayScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Teal, titleContentColor = Color.White)
             )
         },
-        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { pendingTreeTarget = "import_custom"; treeLauncher.launch(null) }, onAddDay = { showAddDayDialog = true }) }
+        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, onAddDay = { showAddDayDialog = true }) }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
             SearchField(
@@ -275,6 +277,13 @@ fun DayScreen(
                     Text("إلغاء")
                 }
             }
+        )
+    }
+
+    if (showNewFolderDialog) {
+        NewFolderDialog(
+            onSave = { name -> scope.launch { repository.createSubFolder(year, month, name) } },
+            onDismiss = { showNewFolderDialog = false }
         )
     }
 }
