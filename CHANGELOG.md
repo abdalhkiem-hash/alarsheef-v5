@@ -100,3 +100,22 @@
 - Ø§Ø®ØªØ¨Ø§Ø±Ø§Øª Ø§Ù„ØªØ±Ø­ÙŠÙ„ **Ø§Ø®ØªØ¨Ø§Ø±Ø§Øª Ø£Ø¬Ù‡Ø²Ø©** (`androidTest`) â€” Ø¬ÙØ±Øª ÙˆÙ†ÙÙÙ‘Ø°Øª Ø¨Ù†Ø¬Ø§Ø­ Ø¹Ù„Ù‰ Ø¬Ù‡Ø§Ø² ÙØ¹Ù„ÙŠ (Galaxy S22 Ultra / Android 14): `connectedDebugAndroidTest` = **14/14 Ø§Ø®ØªØ¨Ø§Ø±Ù‹Ø§ Ù†Ø§Ø¬Ø­Ù‹Ø§** (11 DAO + 3 ØªØ±Ø­ÙŠÙ„).
 - `:app:compileDebugAndroidTestKotlin` + `:app:assembleDebugAndroidTest` ÙŠØ¹Ù…Ù„Ø§Ù† Ø§Ù„Ø¢Ù† (Ø³ÙØ¯Ù‘Øª Ø§Ù„ØªØ¨Ø¹ÙŠØ© Ø§Ù„Ù†Ø§Ù‚ØµØ© `concurrent-futures-ktx`).
 - `gradle.properties`: Ø±ÙØ¹ Ù…Ù‡Ù„Ø§Øª HTTP Ù„Ù…Ø­Ù…Ù‘Ù„ Ø§Ù„ØªØ¨Ø¹ÙŠØ§Øª (180 Ø«Ø§Ù†ÙŠØ©) Ù„Ø´Ø¨ÙƒØ© Ø¨Ø·ÙŠØ¦Ø©/Ù…Ù‚Ø·Ø¹Ø©.
+---
+## ÅÖÇİÉ — ÅäÔÇÁ ãÌáÏÇÊ İÑÚíÉ İí ÌãíÚ ÇáÔÇÔÇÊ (P1)
+
+| Çáãáİ | ÇáÊÛííÑ |
+|---|---|
+| CommonDialogs.kt | ÅÖÇİÉ NewFolderDialog composable (ÍæÇÑ ÅÏÎÇá ÇÓã ÇáãÌáÏ ÇáÌÏíÏ) |
+| HomeScreen.kt | onAddFolder íİÊÍ NewFolderDialog ? createSubFolder(latestYear, 0, name) |
+| MonthScreen.kt | onAddFolder íİÊÍ NewFolderDialog ? createSubFolder(year, month, name) |
+| DayScreen.kt | onAddFolder íİÊÍ NewFolderDialog ? createSubFolder(year, month, name) |
+| FilesScreen.kt | onAddFolder íİÊÍ NewFolderDialog ? createSubFolder(year, month, name) |
+
+## ÅÕáÇÍ — äÙÇã ÇáÇÓÊíÑÇÏ ÇáÊáŞÇÆí (P0)
+
+| ÇáãÔßáÉ | ÇáÅÕáÇÍ |
+|---|---|
+| isitDocuments İí FileScannerWorker ÊÓÊÏÚí äİÓåÇ ÊßÑÇÑíğÇ ÈÏæä İÍÕ ÚãŞ ? ÎØÑ stack overflow Úáì ãÌáÏÇÊ ÚãíŞÉ | ÃõÖíİ if (depth > MAX_DEPTH) return İí ÈÏÇíÉ isitDocuments |
+| AiAnalysisScheduler.start íÓÊÎÏã APPEND_OR_REPLACE ? ŞÏ íáÛí ÊÍáíá Ğßí ÌÇÑí | ÊÈÏíá Åáì ExistingWorkPolicy.KEEP |
+| ãÓÇİÉ ãÖÇÚİÉ İí scanMediaStore (ÓØÑ 122) | ÊÕÍíÍ spacing |
+
