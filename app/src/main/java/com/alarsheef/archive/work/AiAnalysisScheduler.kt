@@ -12,7 +12,7 @@ object AiAnalysisScheduler {
         val request = OneTimeWorkRequestBuilder<AiAnalysisWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             AiAnalysisWorker.ONE_TIME_WORK_NAME,
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            ExistingWorkPolicy.KEEP,
             request
         )
     }

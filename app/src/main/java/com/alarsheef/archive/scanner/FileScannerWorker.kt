@@ -120,7 +120,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     val originalPath = "$relativePath/$displayName"
                     if (repository.findByOriginalPath(originalPath) != null) continue
                      if (!FileUtils.isImage(displayName)) continue
-                    val isPersonal = excludePersonalPhotos &&
+                     val isPersonal = excludePersonalPhotos &&
                         FaceDetectionUtil.hasFace(applicationContext, uri)
                     if (!isPersonal) {
                         val temp = copyMediaStoreImageToTemp(uri)
@@ -180,6 +180,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         todayStart: Long,
         depth: Int,
     ) {
+        if (depth > MAX_DEPTH) return
         for (doc in folder.listFiles()) {
             currentCoroutineContext().ensureActive()
             if (doc.isDirectory) {
