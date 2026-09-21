@@ -69,6 +69,7 @@ import com.alarsheef.archive.ui.components.ConfirmDeleteDialog
 import com.alarsheef.archive.ui.components.CustomLabelDialog
 import com.alarsheef.archive.ui.components.DrawerPanel
 import com.alarsheef.archive.ui.components.ExportImportPanelContent
+import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.components.SettingsPanelContent
 import com.alarsheef.archive.ui.components.rememberScopeSuggestions
@@ -113,7 +114,8 @@ fun HomeScreen(
     var confirmDeleteYear by remember { mutableStateOf<Int?>(null) }
     var labelDialogScope by remember { mutableStateOf<String?>(null) }
     var pendingExport by remember { mutableStateOf<PendingExport?>(null) }
-    var pendingTreeTarget by remember { mutableStateOf<String?>(null) } // "import" | "backup" | "whatsapp_images" | "whatsapp_docs" | "downloads"
+    var pendingTreeTarget by remember { mutableStateOf<String?>(null) }
+    var showNewFolderDialog by remember { mutableStateOf(false) }
 
     val labelSuggestions = rememberScopeSuggestions(repository, labelDialogScope)
 
@@ -248,7 +250,7 @@ when (target) {
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Teal, titleContentColor = Color.White)
                 )
             },
-            floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { pendingTreeTarget = "import_custom"; treeLauncher.launch(null) }) }
+            floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, onAddDay = {}) }
         ) { padding ->
             Column(modifier = Modifier.padding(padding)) {
                 SearchField(
@@ -351,6 +353,14 @@ when (target) {
             onSave = { text -> scope.launch { repository.setLabel(scopeKey, text) } },
             onDismiss = { labelDialogScope = null },
             suggestions = labelSuggestions
+        )
+    }
+
+    if (showNewFolderDialog) {
+        val latestYear = years.firstOrNull()?.year ?: 0
+        NewFolderDialog(
+            onSave = { name -> scope.launch { repository.createSubFolder(latestYear, 0, name) } },
+            onDismiss = { showNewFolderDialog = false }
         )
     }
 }

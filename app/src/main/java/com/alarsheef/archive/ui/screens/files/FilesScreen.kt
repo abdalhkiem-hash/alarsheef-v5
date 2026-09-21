@@ -66,6 +66,7 @@ import coil.compose.AsyncImage
 import com.alarsheef.archive.data.entities.ArchivedImage
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.ui.components.AddFab
+import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.theme.Amber
 import com.alarsheef.archive.ui.theme.Teal
@@ -93,6 +94,7 @@ fun FilesScreen(
     var moveDialogOpen by remember { mutableStateOf(false) }
     var shareDialogOpen by remember { mutableStateOf(false) }
     var confirmDeleteOpen by remember { mutableStateOf(false) }
+    var showNewFolderDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     val filtered = images.filter { query.isBlank() || it.fileName.contains(query) }
@@ -173,7 +175,7 @@ fun FilesScreen(
             }
         },
         floatingActionButton = {
-            if (!hasSelection) AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { scope.launch { snackbarHostState.showSnackbar("استخدم الإعدادات لإضافة مجلدات") } })
+            if (!hasSelection) AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, onAddDay = {})
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -295,6 +297,13 @@ fun FilesScreen(
             startIndex = idx,
             onClose = { viewerIndex = null },
             onShare = { img -> shareUris(listOf(repository.getShareUri(img)), "image/*") }
+        )
+    }
+
+    if (showNewFolderDialog) {
+        NewFolderDialog(
+            onSave = { name -> scope.launch { repository.createSubFolder(year, month, name) } },
+            onDismiss = { showNewFolderDialog = false }
         )
     }
 }

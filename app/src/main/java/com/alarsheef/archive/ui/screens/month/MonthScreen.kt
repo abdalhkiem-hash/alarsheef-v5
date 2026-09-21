@@ -62,6 +62,7 @@ import com.alarsheef.archive.porter.PorterResult
 import com.alarsheef.archive.ui.components.AddFab
 import com.alarsheef.archive.ui.components.ConfirmDeleteDialog
 import com.alarsheef.archive.ui.components.CustomLabelDialog
+import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.components.rememberScopeSuggestions
 import com.alarsheef.archive.ui.theme.Teal
@@ -86,6 +87,7 @@ fun MonthScreen(
     var pendingExportMonth by remember { mutableStateOf<Int?>(null) }
     var pendingTreeTarget by remember { mutableStateOf<String?>(null) }
     var showSubFolderDialog by remember { mutableStateOf(false) }
+    var showNewFolderDialog by remember { mutableStateOf(false) }
     var newSubFolderName by remember { mutableStateOf("") }
     var subFolderMonth by remember { mutableStateOf<Int?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -189,7 +191,7 @@ fun MonthScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Teal, titleContentColor = Color.White)
             )
         },
-        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { pendingTreeTarget = "import_custom"; treeLauncher.launch(null) }) }
+        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, onAddDay = {}) }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
             SearchField(query = query, onQueryChange = { query = it }, placeholder = "ابحث في أشهر $year...")
@@ -243,7 +245,7 @@ fun MonthScreen(
         )
     }
 
-    if (showSubFolderDialog && subFolderMonth != null) {
+if (showSubFolderDialog && subFolderMonth != null) {
         AlertDialog(
             onDismissRequest = { showSubFolderDialog = false; subFolderMonth = null },
             title = { Text("مجلد فرعي جديد") },
@@ -265,9 +267,15 @@ fun MonthScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showSubFolderDialog = false; subFolderMonth = null; newSubFolderName = "" }) {
-                    Text("إلغاء")
-                }
+                    Text("إلغاء") }
             }
+        )
+    }
+
+    if (showNewFolderDialog) {
+        NewFolderDialog(
+            onSave = { name -> scope.launch { repository.createSubFolder(year, month, name) } },
+            onDismiss = { showNewFolderDialog = false }
         )
     }
 }
