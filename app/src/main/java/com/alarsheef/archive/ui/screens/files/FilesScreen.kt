@@ -1,7 +1,10 @@
 package com.alarsheef.archive.ui.screens.files
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -65,6 +68,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.alarsheef.archive.data.entities.ArchivedImage
 import com.alarsheef.archive.data.repository.ArchiveRepository
+import com.alarsheef.archive.porter.ArchivePorter
+import com.alarsheef.archive.porter.PorterResult
 import com.alarsheef.archive.ui.components.AddFab
 import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
@@ -95,7 +100,44 @@ fun FilesScreen(
     var shareDialogOpen by remember { mutableStateOf(false) }
     var confirmDeleteOpen by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
+    var pendingExportDay by remember { mutableStateOf<Int?>(null) }
+    val porter = remember { ArchivePorter(context, repository) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val day = pendingExportDay
+        pendingExportDay = null
+        if (uri != null && day != null) {
+            scope.launch {
+                val images = repository.byDayForExport(year, month, day)
+                val result = porter.exportTo(uri, images)
+                snackbarHostState.showSnackbar(
+                    when (result) {
+                        is PorterResult.Success -> "تم تصدير ${result.count} ملف"
+                        is PorterResult.Failure -> "تعذّر تصدير اليوم"
+                    }
+                )
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val result = porter.importFrom(uri)
+                snackbarHostState.showSnackbar(
+                    when (result) {
+                        is PorterResult.Success -> "تم استيراد ${result.count} ملف جديد (المكرر يُتجاهل)"
+                        is PorterResult.Failure -> "تعذّر استيراد الأرشيف"
+                    }
+                )
+            }
+        }
+    }
 
     val filtered = images.filter { query.isBlank() || it.fileName.contains(query) }
     val hasSelection = selected.isNotEmpty()
@@ -120,6 +162,13 @@ fun FilesScreen(
     // زر الرجوع يقفل العارض أو يلغي التحديد أولاً بدل ما يطلع من الشاشة
     BackHandler(enabled = viewerIndex != null) { viewerIndex = null }
     BackHandler(enabled = viewerIndex == null && hasSelection) { selected = emptySet() }
+
+    fun shareScope() {
+        scope.launch {
+            val uris = images.mapNotNull { repository.getShareUri(it) }
+            if (uris.isNotEmpty()) shareUris(uris, "image/*")
+        }
+    }
 
     fun shareUris(uris: List<android.net.Uri>, mimeType: String) {
         if (uris.isEmpty()) return
@@ -170,12 +219,25 @@ fun FilesScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع", tint = Color.White)
                         }
                     },
+                    actions = {
+                        IconButton(onClick = { shareScope() }) {
+                            Icon(Icons.Filled.Share, contentDescription = "مشاركة", tint = Color.White)
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Teal, titleContentColor = Color.White)
                 )
             }
         },
         floatingActionButton = {
-            if (!hasSelection) AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, onAddDay = {})
+            AddFab(
+                repository = repository,
+                snackbarHostState = snackbarHostState,
+                scope = scope,
+                onAddFolder = { showNewFolderDialog = true },
+                onAddDay = {},
+                onExportAll = { pendingExportDay = day; exportLauncher.launch("alarsheef-$year-${FileUtils.twoDigits(month)}-${FileUtils.twoDigits(day)}.zip") },
+                onImportZip = { importLauncher.launch(arrayOf("application/zip")) }
+            )
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {

@@ -7,9 +7,11 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarViewDay
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -38,7 +40,9 @@ fun AddFab(
     snackbarHostState: SnackbarHostState,
     scope: CoroutineScope,
     onAddFolder: () -> Unit,
-    onAddDay: () -> Unit
+    onAddDay: () -> Unit,
+    onExportAll: (() -> Unit)? = null,
+    onImportZip: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
@@ -130,6 +134,20 @@ fun AddFab(
                     onAddDay()
                 }
             )
+            if (onExportAll != null) {
+                DropdownMenuItem(
+                    text = { Text("تصدير كل الملفات (ZIP)") },
+                    leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null) },
+                    onClick = { menuExpanded = false; onExportAll() }
+                )
+            }
+            if (onImportZip != null) {
+                DropdownMenuItem(
+                    text = { Text("استيراد أرشيف (ZIP)") },
+                    leadingIcon = { Icon(Icons.Filled.Create, contentDescription = null) },
+                    onClick = { menuExpanded = false; onImportZip() }
+                )
+            }
         }
     }
 }
