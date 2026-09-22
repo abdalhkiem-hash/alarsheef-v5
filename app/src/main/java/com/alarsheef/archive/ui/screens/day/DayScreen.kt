@@ -1,12 +1,8 @@
 package com.alarsheef.archive.ui.screens.day
 
 import android.content.Intent
-import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.documentfile.provider.DocumentFile
-import com.alarsheef.archive.settings.SettingsPreferences
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,7 +84,6 @@ fun DayScreen(
     var confirmDeleteDay by remember { mutableStateOf<Int?>(null) }
     var labelDialogScope by remember { mutableStateOf<String?>(null) }
     var pendingExportDay by remember { mutableStateOf<Int?>(null) }
-    var pendingTreeTarget by remember { mutableStateOf<String?>(null) }
     var showAddDayDialog by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var newDayNumber by remember { mutableStateOf("") }
@@ -160,31 +155,7 @@ fun DayScreen(
         }
     }
 
-    val treeLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        val target = pendingTreeTarget
-        pendingTreeTarget = null
-        if (uri != null && target != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            }
-            scope.launch {
-                when (target) {
-                    "import_custom" -> {
-                        val prefs = SettingsPreferences(context)
-                        prefs.setImportFolderUri(uri.toString())
-                    }
-                }
-                snackbarHostState.showSnackbar("تم اختيار المجلد")
-            }
-        }
-    }
-
-    Scaffold(
+Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
