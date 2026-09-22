@@ -2,6 +2,7 @@ package com.alarsheef.archive.work
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alarsheef.archive.ai.FaceGroupingEngine
@@ -30,6 +31,7 @@ class AiAnalysisWorker(
         const val UNIQUE_WORK_NAME = "ai_image_analysis"
         const val ONE_TIME_WORK_NAME = "ai_image_analysis_onetime"
         private const val MAX_PER_RUN = 120
+        private const val TAG = "AiAnalysisWorker"
     }
 
     override suspend fun doWork(): Result {
@@ -71,7 +73,7 @@ class AiAnalysisWorker(
                 continue
             }
 
-            runCatching {
+            try {
                 // تمريرة واحدة لاكتشاف الوجوه — تستخدم للإشارة في التصنيف وللتجميع معًا
                 val faces = if (facesEnabled) {
                     FaceGroupingEngine.detectFaces(file)
@@ -109,6 +111,10 @@ class AiAnalysisWorker(
                         }
                     }
                 }
+            } catch (e: OutOfMemoryError) {
+                Log.w(TAG, "OOM لمعالجة الصورة ${image.id}: ${e.message}")
+                repository.markAiAnalyzed(image.id)
+                continue
             }
 
             repository.markAiAnalyzed(image.id)
