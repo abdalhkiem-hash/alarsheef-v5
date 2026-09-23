@@ -101,21 +101,38 @@
 - `:app:compileDebugAndroidTestKotlin` + `:app:assembleDebugAndroidTest` يعملان الآن (سُدّت التبعية الناقصة `concurrent-futures-ktx`).
 - `gradle.properties`: رفع مهلات HTTP لمحمّل التبعيات (180 ثانية) لشبكة بطيئة/مقطعة.
 ---
-## ����� � ����� ������ ����� �� ���� ������� (P1)
+## ����� � ����� ������ ����� �� ���� ������� (P1)
 
-| ����� | ������� |
+| ����� | ������� |
 |---|---|
-| CommonDialogs.kt | ����� NewFolderDialog composable (���� ����� ��� ������ ������) |
-| HomeScreen.kt | onAddFolder ���� NewFolderDialog ? createSubFolder(latestYear, 0, name) |
-| MonthScreen.kt | onAddFolder ���� NewFolderDialog ? createSubFolder(year, month, name) |
-| DayScreen.kt | onAddFolder ���� NewFolderDialog ? createSubFolder(year, month, name) |
-| FilesScreen.kt | onAddFolder ���� NewFolderDialog ? createSubFolder(year, month, name) |
+| CommonDialogs.kt | ����� NewFolderDialog composable (���� ����� ��� ������ ������) |
+| HomeScreen.kt | onAddFolder ���� NewFolderDialog ? createSubFolder(latestYear, 0, name) |
+| MonthScreen.kt | onAddFolder ���� NewFolderDialog ? createSubFolder(year, month, name) |
+| DayScreen.kt | onAddFolder ���� NewFolderDialog ? createSubFolder(year, month, name) |
+| FilesScreen.kt | onAddFolder ���� NewFolderDialog ? createSubFolder(year, month, name) |
 
-## ����� � ���� ��������� �������� (P0)
+## ����� � ���� ��������� �������� (P0)
 
-| ������� | ������� |
+| ������� | ������� |
 |---|---|
-| isitDocuments �� FileScannerWorker ������ ����� �������� ���� ��� ��� ? ��� stack overflow ��� ������ ����� | ����� if (depth > MAX_DEPTH) return �� ����� isitDocuments |
-| AiAnalysisScheduler.start ������ APPEND_OR_REPLACE ? �� ���� ����� ��� ���� | ����� ��� ExistingWorkPolicy.KEEP |
-| ����� ������ �� scanMediaStore (��� 122) | ����� spacing |
+| isitDocuments �� FileScannerWorker ������ ����� �������� ���� ��� ��� ? ��� stack overflow ��� ������ ����� | ����� if (depth > MAX_DEPTH) return �� ����� isitDocuments |
+| AiAnalysisScheduler.start ������ APPEND_OR_REPLACE ? �� ���� ����� ��� ���� | ����� ��� ExistingWorkPolicy.KEEP |
+| ����� ������ �� scanMediaStore (��� 122) | ����� spacing |
+
+## تحسين أداء الاستيراد التلقائي (24/9/2026)
+
+| الملف | التغيير |
+|---|---|
+| `ArchivedImageDao.kt` | إضافة `findAllOriginalPaths()` — تحميل جميع المسارات مرة واحدة بدل استعلام لكل صورة |
+| `ArchiveRepository.kt` | إضافة `findAllOriginalPaths()` للمرجع |
+| `FileScannerWorker.kt` | **تحسينات كبيرة**: تحميل `existingPaths` كـ Set مرة واحدة، تخطي كشف الوجوه إن لم يُفعَّل، تتبع `newImagesCount`، بدء `AiAnalysisScheduler` فقط عند وجود صور جديدة، إصلاح نوع `ImportResult.Added` |
+| `SettingsPanels.kt` | فرد الـ `Column` بـ `verticalScroll` لمنع فقدان الأزرار |
+| `HomeScreen.kt` | `skipPartiallyExpanded = true` للـ bottom sheet + `verticalScroll` |
+
+### النتائج
+- `:app:assembleDebug` = **BUILD SUCCESSFUL** ✅
+- APK مُثبّت على Samsung Galaxy S21 Ultra (SM-S908U) ✅
+- الاستيراد التلقائي يعمل مع **واتساب عادي** و**واتساب أعمال** ✅
+- قاعدة البيانات تُظهر `sourceApp=WHATSAPP_BUSINESS` للصور من `Android/media/com.whatsapp.w4b/` ✅
+- الأزرار الجديدة في الإعدادات مرئية وقابلة للتمرير ✅
 
