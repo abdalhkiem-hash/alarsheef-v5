@@ -15,11 +15,12 @@ import com.alarsheef.archive.data.entities.CustomLabel
 import com.alarsheef.archive.data.entities.DayGroup
 import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.data.entities.SubFolder
-import com.alarsheef.archive.data.entities.SubFolder
 import com.alarsheef.archive.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -104,7 +105,7 @@ class ArchiveRepository(context: Context) {
         if (group != null) {
             dayGroupDao.delete(group.id)
         } else {
-            imageDao.deleteImagesForDay(year, month, day)
+            imageDao.deleteDay(year, month, day)
         }
     }
 

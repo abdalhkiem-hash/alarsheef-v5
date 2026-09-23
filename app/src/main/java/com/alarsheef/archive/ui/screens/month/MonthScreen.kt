@@ -99,8 +99,6 @@ fun MonthScreen(
             (it.label?.contains(query) == true)
     }
 
-    val subFolders by repository.observeSubFolders(year).collectAsStateWithLifecycle(initial = emptyList())
-
     fun createSubFolder(month: Int, name: String) {
         if (name.isBlank()) return
         scope.launch {
@@ -274,7 +272,7 @@ if (showSubFolderDialog && subFolderMonth != null) {
 
     if (showNewFolderDialog) {
         NewFolderDialog(
-            onSave = { name -> scope.launch { repository.createSubFolder(year, month, name) } },
+            onSave = { name -> if (subFolderMonth != null) scope.launch { repository.createSubFolder(year, subFolderMonth!!, name) } },
             onDismiss = { showNewFolderDialog = false }
         )
     }

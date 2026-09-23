@@ -44,7 +44,7 @@ class Converters {
         SubFolder::class,
         DayGroup::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -174,6 +174,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** ترقية 6→7: إصلاح فهارس sub_folders و day_groups */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP INDEX IF EXISTS index_sub_folders_year_month")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_sub_folders_year_month_name " +
+                        "ON sub_folders (year, month, name)"
+                )
+                db.execSQL("DROP INDEX IF EXISTS index_day_groups_year_month")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_day_groups_year_month_dayNumber " +
+                        "ON day_groups (year, month, dayNumber)"
+                )
+            }
+        }
+
         @Volatile private var INSTANCE: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase =
@@ -182,7 +198,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "arsheef.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { INSTANCE = it }
             }

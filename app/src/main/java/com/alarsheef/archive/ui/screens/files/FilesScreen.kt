@@ -163,13 +163,6 @@ fun FilesScreen(
     BackHandler(enabled = viewerIndex != null) { viewerIndex = null }
     BackHandler(enabled = viewerIndex == null && hasSelection) { selected = emptySet() }
 
-    fun shareScope() {
-        scope.launch {
-            val uris = images.mapNotNull { repository.getShareUri(it) }
-            if (uris.isNotEmpty()) shareUris(uris, "image/*")
-        }
-    }
-
     fun shareUris(uris: List<android.net.Uri>, mimeType: String) {
         if (uris.isEmpty()) return
         val intent = if (uris.size == 1) {
@@ -189,6 +182,13 @@ fun FilesScreen(
         }
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         context.startActivity(Intent.createChooser(intent, null))
+    }
+
+    fun shareScope() {
+        scope.launch {
+            val uris = images.mapNotNull { repository.getShareUri(it) }
+            if (uris.isNotEmpty()) shareUris(uris, "image/*")
+        }
     }
 
     Scaffold(
