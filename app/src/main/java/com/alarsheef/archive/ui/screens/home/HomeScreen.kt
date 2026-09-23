@@ -109,7 +109,7 @@ fun HomeScreen(
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     var activePanel by remember { mutableStateOf<DrawerPanel?>(null) }
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var confirmDeleteYear by remember { mutableStateOf<Int?>(null) }
     var labelDialogScope by remember { mutableStateOf<String?>(null) }

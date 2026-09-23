@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -43,7 +45,7 @@ fun SettingsPanelContent(
     val excludePersonal by prefs.excludePersonalPhotos.collectAsStateWithLifecycle(initialValue = true)
     val importFolderUri by prefs.importFolderUri.collectAsStateWithLifecycle(initialValue = null)
 
-    Column(Modifier.padding(20.dp)) {
+    Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
         Text("الإعدادات", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 16.dp))
         SwitchRow("الاستيراد التلقائي اليومي", autoImport) { enabled ->
             scope.launch { prefs.setAutoImport(enabled) }
