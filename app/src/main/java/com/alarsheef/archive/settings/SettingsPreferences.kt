@@ -13,6 +13,7 @@ class SettingsPreferences(private val context: Context) {
     private object Keys {
         val AUTO_IMPORT = booleanPreferencesKey("auto_import_enabled")
         val SOURCE_WHATSAPP = booleanPreferencesKey("source_whatsapp")
+        val SOURCE_WHATSAPP_BUSINESS = booleanPreferencesKey("source_whatsapp_business")
         val SOURCE_GALLERY = booleanPreferencesKey("source_gallery")
         val SOURCE_DOWNLOADS = booleanPreferencesKey("source_downloads")
         val IMPORT_FOLDER_URI = stringPreferencesKey("import_folder_uri")
@@ -29,12 +30,17 @@ class SettingsPreferences(private val context: Context) {
         val WHATSAPP_IMAGES_TREE_URI = stringPreferencesKey("whatsapp_images_tree_uri")
         /** معرّف شجرة SAF لمجلد وثائق واتساب. */
         val WHATSAPP_DOCUMENTS_TREE_URI = stringPreferencesKey("whatsapp_documents_tree_uri")
+        /** معرّف شجرة SAF لمجلد صور واتساب أعمال. */
+        val WHATSAPP_BUSINESS_IMAGES_TREE_URI = stringPreferencesKey("whatsapp_business_images_tree_uri")
+        /** معرّف شجرة SAF لمجلد وثائق واتساب أعمال. */
+        val WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI = stringPreferencesKey("whatsapp_business_documents_tree_uri")
         /** معرّف شجرة SAF لمجلد التنزيلات. */
         val DOWNLOADS_TREE_URI = stringPreferencesKey("downloads_tree_uri")
     }
 
     val autoImport: Flow<Boolean> = context.appDataStore.data.map { it[Keys.AUTO_IMPORT] ?: true }
     val sourceWhatsapp: Flow<Boolean> = context.appDataStore.data.map { it[Keys.SOURCE_WHATSAPP] ?: true }
+    val sourceWhatsappBusiness: Flow<Boolean> = context.appDataStore.data.map { it[Keys.SOURCE_WHATSAPP_BUSINESS] ?: true }
     val sourceGallery: Flow<Boolean> = context.appDataStore.data.map { it[Keys.SOURCE_GALLERY] ?: true }
     val sourceDownloads: Flow<Boolean> = context.appDataStore.data.map { it[Keys.SOURCE_DOWNLOADS] ?: true }
     val importFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.IMPORT_FOLDER_URI] }
@@ -50,11 +56,16 @@ class SettingsPreferences(private val context: Context) {
     val whatsappImagesTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.WHATSAPP_IMAGES_TREE_URI] }
     /** معرّف شجرة SAF لوثائق واتساب. */
     val whatsappDocumentsTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.WHATSAPP_DOCUMENTS_TREE_URI] }
+    /** معرّف شجرة SAF لصور واتساب أعمال. */
+    val whatsappBusinessImagesTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.WHATSAPP_BUSINESS_IMAGES_TREE_URI] }
+    /** معرّف شجرة SAF لوثائق واتساب أعمال. */
+    val whatsappBusinessDocumentsTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI] }
     /** معرّف شجرة SAF لمجلد التنزيلات. */
     val downloadsTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.DOWNLOADS_TREE_URI] }
 
     suspend fun setAutoImport(v: Boolean) { context.appDataStore.edit { it[Keys.AUTO_IMPORT] = v } }
     suspend fun setSourceWhatsapp(v: Boolean) { context.appDataStore.edit { it[Keys.SOURCE_WHATSAPP] = v } }
+    suspend fun setSourceWhatsappBusiness(v: Boolean) { context.appDataStore.edit { it[Keys.SOURCE_WHATSAPP_BUSINESS] = v } }
     suspend fun setSourceGallery(v: Boolean) { context.appDataStore.edit { it[Keys.SOURCE_GALLERY] = v } }
     suspend fun setSourceDownloads(v: Boolean) { context.appDataStore.edit { it[Keys.SOURCE_DOWNLOADS] = v } }
     suspend fun setImportFolderUri(v: String?) {
@@ -76,6 +87,12 @@ class SettingsPreferences(private val context: Context) {
     }
     suspend fun setWhatsappDocumentsTreeUri(v: String?) {
         context.appDataStore.edit { if (v == null) it.remove(Keys.WHATSAPP_DOCUMENTS_TREE_URI) else it[Keys.WHATSAPP_DOCUMENTS_TREE_URI] = v }
+    }
+    suspend fun setWhatsappBusinessImagesTreeUri(v: String?) {
+        context.appDataStore.edit { if (v == null) it.remove(Keys.WHATSAPP_BUSINESS_IMAGES_TREE_URI) else it[Keys.WHATSAPP_BUSINESS_IMAGES_TREE_URI] = v }
+    }
+    suspend fun setWhatsappBusinessDocumentsTreeUri(v: String?) {
+        context.appDataStore.edit { if (v == null) it.remove(Keys.WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI) else it[Keys.WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI] = v }
     }
     suspend fun setDownloadsTreeUri(v: String?) {
         context.appDataStore.edit { if (v == null) it.remove(Keys.DOWNLOADS_TREE_URI) else it[Keys.DOWNLOADS_TREE_URI] = v }

@@ -214,6 +214,8 @@ when (target) {
                       "backup" -> settingsPrefs.setBackupFolderUri(uri.toString())
                       "whatsapp_images" -> settingsPrefs.setWhatsappImagesTreeUri(uri.toString())
                       "whatsapp_docs" -> settingsPrefs.setWhatsappDocumentsTreeUri(uri.toString())
+                      "whatsapp_biz_images" -> settingsPrefs.setWhatsappBusinessImagesTreeUri(uri.toString())
+                      "whatsapp_biz_docs" -> settingsPrefs.setWhatsappBusinessDocumentsTreeUri(uri.toString())
                       "downloads" -> settingsPrefs.setDownloadsTreeUri(uri.toString())
                       "import_custom" -> settingsPrefs.setImportFolderUri(uri.toString())
                   }
@@ -302,11 +304,19 @@ when (target) {
                          pendingTreeTarget = "whatsapp_images"
                          treeLauncher.launch(null)
                      },
-                     onPickWhatsappDocs = {
-                         pendingTreeTarget = "whatsapp_docs"
-                         treeLauncher.launch(null)
-                     },
-                     onPickDownloads = {
+                      onPickWhatsappDocs = {
+                          pendingTreeTarget = "whatsapp_docs"
+                          treeLauncher.launch(null)
+                      },
+                      onPickWhatsappBizImages = {
+                          pendingTreeTarget = "whatsapp_biz_images"
+                          treeLauncher.launch(null)
+                      },
+                      onPickWhatsappBizDocs = {
+                          pendingTreeTarget = "whatsapp_biz_docs"
+                          treeLauncher.launch(null)
+                      },
+                      onPickDownloads = {
                          pendingTreeTarget = "downloads"
                          treeLauncher.launch(null)
                      }

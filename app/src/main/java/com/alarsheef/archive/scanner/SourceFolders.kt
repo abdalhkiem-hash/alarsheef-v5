@@ -30,6 +30,12 @@ object SourceFolders {
         prefs.whatsappDocumentsTreeUri.first()?.let {
             add(SourceFolder(SourceApp.WHATSAPP, "وثائق واتساب", FolderType.Saf(Uri.parse(it))))
         }
+        prefs.whatsappBusinessImagesTreeUri.first()?.let {
+            add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "صور واتساب أعمال", FolderType.Saf(Uri.parse(it))))
+        }
+        prefs.whatsappBusinessDocumentsTreeUri.first()?.let {
+            add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "وثائق واتساب أعمال", FolderType.Saf(Uri.parse(it))))
+        }
         prefs.downloadsTreeUri.first()?.let {
             add(SourceFolder(SourceApp.DOWNLOADS, "التنزيلات", FolderType.Saf(Uri.parse(it))))
         }
@@ -42,7 +48,33 @@ object SourceFolders {
     suspend fun activeFolders(prefs: SettingsPreferences): List<SourceFolder> {
         val list = mutableListOf<SourceFolder>()
         if (prefs.sourceGallery.first()) list.addAll(galleryMediaStoreFolders())
-        list.addAll(safFolders(prefs))
+        val whatsapp = prefs.sourceWhatsapp.first()
+        val whatsappBusiness = prefs.sourceWhatsappBusiness.first()
+        val downloads = prefs.sourceDownloads.first()
+        if (whatsapp) {
+            prefs.whatsappImagesTreeUri.first()?.let {
+                list.add(SourceFolder(SourceApp.WHATSAPP, "صور واتساب", FolderType.Saf(Uri.parse(it))))
+            }
+            prefs.whatsappDocumentsTreeUri.first()?.let {
+                list.add(SourceFolder(SourceApp.WHATSAPP, "وثائق واتساب", FolderType.Saf(Uri.parse(it))))
+            }
+        }
+        if (whatsappBusiness) {
+            prefs.whatsappBusinessImagesTreeUri.first()?.let {
+                list.add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "صور واتساب أعمال", FolderType.Saf(Uri.parse(it))))
+            }
+            prefs.whatsappBusinessDocumentsTreeUri.first()?.let {
+                list.add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "وثائق واتساب أعمال", FolderType.Saf(Uri.parse(it))))
+            }
+        }
+        if (downloads) {
+            prefs.downloadsTreeUri.first()?.let {
+                list.add(SourceFolder(SourceApp.DOWNLOADS, "التنزيلات", FolderType.Saf(Uri.parse(it))))
+            }
+            prefs.importFolderUri.first()?.let {
+                list.add(SourceFolder(SourceApp.DOWNLOADS, "مجلد الاستيراد المخصص", FolderType.Saf(Uri.parse(it))))
+            }
+        }
         return list
     }
 }

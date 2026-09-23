@@ -30,11 +30,14 @@ fun SettingsPanelContent(
     onPickImportFolder: () -> Unit,
     onPickWhatsappImages: () -> Unit,
     onPickWhatsappDocs: () -> Unit,
+    onPickWhatsappBizImages: () -> Unit,
+    onPickWhatsappBizDocs: () -> Unit,
     onPickDownloads: () -> Unit,
 ) {
     val context = LocalContext.current
     val autoImport by prefs.autoImport.collectAsStateWithLifecycle(initialValue = true)
     val whatsapp by prefs.sourceWhatsapp.collectAsStateWithLifecycle(initialValue = true)
+    val whatsappBusiness by prefs.sourceWhatsappBusiness.collectAsStateWithLifecycle(initialValue = true)
     val gallery by prefs.sourceGallery.collectAsStateWithLifecycle(initialValue = true)
     val downloads by prefs.sourceDownloads.collectAsStateWithLifecycle(initialValue = true)
     val excludePersonal by prefs.excludePersonalPhotos.collectAsStateWithLifecycle(initialValue = true)
@@ -54,6 +57,7 @@ fun SettingsPanelContent(
         HorizontalDivider(Modifier.padding(vertical = 10.dp))
         Text("مصادر السحب", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
         SwitchRow("واتساب", whatsapp) { scope.launch { prefs.setSourceWhatsapp(it) } }
+        SwitchRow("واتساب أعمال", whatsappBusiness) { scope.launch { prefs.setSourceWhatsappBusiness(it) } }
         SwitchRow("الاستديو / المعرض", gallery) { scope.launch { prefs.setSourceGallery(it) } }
         SwitchRow("الملفات / التنزيلات", downloads) { scope.launch { prefs.setSourceDownloads(it) } }
         HorizontalDivider(Modifier.padding(vertical = 10.dp))
@@ -63,6 +67,8 @@ fun SettingsPanelContent(
         Text("مجلدات المصدر (SAF — اخترها من منتقي النظام)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
         OutlinedButton(onClick = onPickWhatsappImages, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد صور واتساب") }
         OutlinedButton(onClick = onPickWhatsappDocs, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد وثائق واتساب") }
+        OutlinedButton(onClick = onPickWhatsappBizImages, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد صور واتساب أعمال") }
+        OutlinedButton(onClick = onPickWhatsappBizDocs, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد وثائق واتساب أعمال") }
         OutlinedButton(onClick = onPickDownloads, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد التنزيلات") }
         OutlinedButton(
             onClick = {

@@ -142,7 +142,8 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
     }
 
     private fun sourceFromRelativePath(path: String): SourceApp? = when {
-        path.startsWith("WhatsApp") -> SourceApp.WHATSAPP
+        path.contains("com.whatsapp.w4b") || path.contains("WhatsApp Business") -> SourceApp.WHATSAPP_BUSINESS
+        path.startsWith("WhatsApp") || path.contains("/com.whatsapp/") -> SourceApp.WHATSAPP
         path.startsWith("DCIM") -> SourceApp.GALLERY
         path.startsWith("Pictures") -> SourceApp.GALLERY
         path.startsWith("Download") -> SourceApp.DOWNLOADS

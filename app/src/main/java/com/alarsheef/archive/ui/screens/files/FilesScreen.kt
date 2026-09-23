@@ -417,6 +417,7 @@ private fun FileRow(
 
 private fun sourceLabel(image: ArchivedImage): String = when (image.sourceApp) {
     com.alarsheef.archive.data.entities.SourceApp.WHATSAPP -> "من واتساب"
+    com.alarsheef.archive.data.entities.SourceApp.WHATSAPP_BUSINESS -> "من واتساب أعمال"
     com.alarsheef.archive.data.entities.SourceApp.GALLERY -> "من الاستديو"
     com.alarsheef.archive.data.entities.SourceApp.DOWNLOADS -> "من التنزيلات"
     com.alarsheef.archive.data.entities.SourceApp.MANUAL_CAMERA -> "التقاط صورة"
