@@ -173,11 +173,13 @@ private fun WelcomeSlideScreen(
 private fun PermissionScreen(onGranted: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    var denied by remember { mutableIntStateOf(0) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         if (results.values.all { it }) onGranted()
+        else denied++
     }
 
     // يعيد فحص الصلاحية كل مرة يرجع فيها المستخدم للتطبيق
@@ -212,7 +214,10 @@ private fun PermissionScreen(onGranted: () -> Unit) {
             modifier = Modifier.padding(top = 22.dp, bottom = 10.dp)
         )
         Text(
-            "لتمكين سحب صورك من المعرض وواتساب تلقائيًا، يُرجى منح صلاحية الوصول للصور والفيديو.\n\nبدون هذي الصلاحية، ما نقدر نفتح لك الأرشيف.",
+            if (denied > 0)
+                "تم رفض الصلاحية. يمكنك تخطي هذه الخطوة واستخدام التطبيق بدون أرشفة تلقائية، أو منح الصلاحية لاحقًا من إعدادات التطبيق."
+            else
+                "لتمكين سحب صورك من المعرض وواتساب تلقائيًا، يُرجى منح صلاحية الوصول للصور والفيديو.\n\nبدون هذي الصلاحية، ما نقدر نفتح لك الأرشيف.",
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White.copy(alpha = 0.9f),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -224,6 +229,12 @@ private fun PermissionScreen(onGranted: () -> Unit) {
             colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Color.White)
         ) {
             Text("منح الصلاحية", modifier = Modifier.padding(vertical = 6.dp))
+        }
+        TextButton(
+            onClick = { onGranted() },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) {
+            Text("تخطي", color = Color.White.copy(alpha = 0.85f))
         }
         Text(
             "سيفتح هذا صفحة الصلاحيات",
