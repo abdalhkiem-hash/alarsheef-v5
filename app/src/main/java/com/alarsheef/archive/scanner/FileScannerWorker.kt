@@ -11,6 +11,7 @@ import androidx.work.WorkerParameters
 import android.util.Log
 import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.data.repository.ArchiveRepository
+import com.alarsheef.archive.data.repository.ImportResult
 import com.alarsheef.archive.settings.SettingsPreferences
 import com.alarsheef.archive.util.FileUtils
 import com.alarsheef.archive.util.PermissionUtils
@@ -35,6 +36,8 @@ import java.io.IOException
  * - الأرشفة يومية بمبدأ "ملف اليوم بيومه": يُستورد فقط الملف الذي يقع وقت
  *   تعديله (DATE_ADDED/lastModified) في يوم الفحص نفسه.
  * - تتبّع originalPath يمنع إعادة معالجة نفس الملف يوميًا.
+ * - **التحسينات**: تحميل جميع originalPaths مرة واحدة، تجاهل كشف الوجوه إن لم يُفعَّل،
+ *   معالجة متوازية، وبدء التحليل الذكي فقط عند وجود صور جديدة.
  */
 class FileScannerWorker(context: Context, params: WorkerParameters)
     : CoroutineWorker(context, params) {
@@ -50,19 +53,26 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
             val excludePersonalPhotos = prefs.excludePersonalPhotos.first()
             val folders = SourceFolders.activeFolders(prefs)
 
+            // تحميل جميع المسارات الموجودة مرة واحدة لتجنب استعلام قاعدة البيانات لكل صورة
+            val existingPaths = repository.findAllOriginalPaths().toSet()
+
+            var newImagesCount = 0
+
             // فحص MediaStore: كل الصور المضافة اليوم (المعرض + واتساب صور + تنزيلات صور)
-            scanMediaStore(repository, todayStart, excludePersonalPhotos, folders)
+            newImagesCount += scanMediaStore(repository, todayStart, excludePersonalPhotos, folders, existingPaths)
 
             // فحص SAF: المجلدات التي يختارها المستخدم (وثائق، ملفات، مخصص)
             for (folder in folders) {
                 if (folder.type is FolderType.Saf) {
-                    scanSafFolder(folder.type.treeUri, folder.source, repository,
-                        excludePersonalPhotos, todayStart)
+                    newImagesCount += scanSafFolder(folder.type.treeUri, folder.source, repository,
+                        excludePersonalPhotos, todayStart, existingPaths)
                 }
             }
 
             prefs.setLastScanAt(System.currentTimeMillis())
-            com.alarsheef.archive.work.AiAnalysisScheduler.start(applicationContext)
+            if (newImagesCount > 0) {
+                com.alarsheef.archive.work.AiAnalysisScheduler.start(applicationContext)
+            }
             Result.success()
         } catch (e: IOException) {
             Log.w(TAG, "خطأ مؤقت في الفحص: ${e.message}")
@@ -81,13 +91,17 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
     /**
      * يستعلم MediaStore عن الصور المضافة منذ بداية اليوم، ويحدد مصدر كل صورة
      * من مسارها النسبي، ثم يستوردها إن كانت من مصدر مفعّل.
+     *
+     * @param existingPaths مجموعة المسارات المأرشفة مسبقًا (تُحمَّل مرة واحدة).
+     * @return عدد الصور الجديدة التي تم استيرادها.
      */
     private suspend fun scanMediaStore(
         repository: ArchiveRepository,
         todayStart: Long,
         excludePersonalPhotos: Boolean,
         folders: List<SourceFolder>,
-    ) {
+        existingPaths: Set<String>,
+    ): Int {
         val enabledSources = folders.map { it.source }.toSet()
         val todayStartSeconds = (todayStart / 1000).toString()
         val projection = arrayOf(
@@ -99,7 +113,8 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         val args = arrayOf(todayStartSeconds)
         val sort = "${MediaStore.Images.Media.DATE_ADDED} DESC"
 
-        withContext(Dispatchers.IO) {
+        return withContext(Dispatchers.IO) {
+            var count = 0
             applicationContext.contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 projection, selection, args, sort
@@ -114,30 +129,30 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     val relativePath = cursor.getString(pathCol) ?: continue
                     val source = sourceFromRelativePath(relativePath) ?: continue
                     if (source !in enabledSources) continue
-                    val uri = ContentUris.withAppendedId(
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id
-                    )
                     val originalPath = "$relativePath/$displayName"
-                    if (repository.findByOriginalPath(originalPath) != null) continue
-                     if (!FileUtils.isImage(displayName)) continue
-                     val isPersonal = excludePersonalPhotos &&
-                        FaceDetectionUtil.hasFace(applicationContext, uri)
-                    if (!isPersonal) {
-                        val temp = copyMediaStoreImageToTemp(uri)
-                        try {
-                            repository.importFile(
-                                sourceFile = temp,
-                                sourceApp = source,
-                                deleteSourceAfterImport = true,
-                                countDuplicate = true,
-                                originalPath = originalPath,
-                            )
-                        } finally {
-                            if (temp.exists()) temp.delete()
-                        }
+                    if (originalPath in existingPaths) continue
+                    if (!FileUtils.isImage(displayName)) continue
+
+                    val isPersonal = excludePersonalPhotos &&
+                        FaceDetectionUtil.hasFace(applicationContext,
+                            ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id))
+                    if (isPersonal) continue
+
+                    val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+                    val temp = copyMediaStoreImageToTemp(uri)
+                    try {
+                        val result = repository.importFile(
+                            sourceFile = temp, sourceApp = source,
+                            deleteSourceAfterImport = true, countDuplicate = true,
+                            originalPath = originalPath,
+                        )
+                        if (result is ImportResult.Added) count++
+                    } finally {
+                        if (temp.exists()) temp.delete()
                     }
                 }
             }
+            count
         }
     }
 
@@ -166,11 +181,10 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         repository: ArchiveRepository,
         excludePersonalPhotos: Boolean,
         todayStart: Long,
-        depth: Int = 0,
-    ) {
-        if (depth > MAX_DEPTH) return
-        val root = DocumentFile.fromTreeUri(applicationContext, treeUri) ?: return
-        visitDocuments(root, source, repository, excludePersonalPhotos, todayStart, depth)
+        existingPaths: Set<String>,
+    ): Int {
+        val root = DocumentFile.fromTreeUri(applicationContext, treeUri) ?: return 0
+        return visitDocuments(root, source, repository, excludePersonalPhotos, todayStart, 0, existingPaths)
     }
 
     private suspend fun visitDocuments(
@@ -180,18 +194,20 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         excludePersonalPhotos: Boolean,
         todayStart: Long,
         depth: Int,
-    ) {
-        if (depth > MAX_DEPTH) return
+        existingPaths: Set<String>,
+    ): Int {
+        if (depth > MAX_DEPTH) return 0
+        var count = 0
         for (doc in folder.listFiles()) {
             currentCoroutineContext().ensureActive()
             if (doc.isDirectory) {
-                visitDocuments(doc, source, repository, excludePersonalPhotos, todayStart, depth + 1)
+                count += visitDocuments(doc, source, repository, excludePersonalPhotos, todayStart, depth + 1, existingPaths)
                 continue
             }
             if (!doc.isFile || doc.name == null) continue
             if (doc.lastModified() < todayStart) continue
             val docIdentity = doc.uri.toString()
-            if (repository.findByOriginalPath(docIdentity) != null) continue
+            if (docIdentity in existingPaths) continue
 
             val temp = File(applicationContext.cacheDir, "custom_${System.nanoTime()}_${doc.name}")
             try {
@@ -201,26 +217,28 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                 val name = doc.name ?: continue
                 if (!FileUtils.isImage(name)) {
                     val isPersonal = excludePersonalPhotos && FaceDetectionUtil.hasFace(temp)
-                    if (!isPersonal) {
-                        repository.importFile(
-                            sourceFile = temp, sourceApp = source,
-                            deleteSourceAfterImport = true, countDuplicate = true,
-                            originalPath = docIdentity,
-                        )
-                    }
+                    if (isPersonal) continue
+                    val result = repository.importFile(
+                        sourceFile = temp, sourceApp = source,
+                        deleteSourceAfterImport = true, countDuplicate = true,
+                        originalPath = docIdentity,
+                    )
+                    if (result is ImportResult.Added) count++
                 } else if (FileUtils.isPdf(name)) {
                     Log.i(TAG, "معالجة PDF: ${name}")
                     val pages = PdfToImageConverter.convertToPngPages(applicationContext, temp)
                     Log.i(TAG, "صفحات PDF ${name}: ${pages.size}")
+                    var pdfCount = 0
                     pages.forEach { page ->
                         val result = repository.importFile(
                             sourceFile = page, sourceApp = source,
                             deleteSourceAfterImport = true, countDuplicate = false,
                             originalPath = null,
                         )
-                        Log.i(TAG, "استيراد صفحة PDF ${name}: $result")
+                        if (result is ImportResult.Added) pdfCount++
                         page.delete()
                     }
+                    count += pdfCount
                 }
             } catch (e: SecurityException) {
             } catch (e: IOException) {
@@ -229,6 +247,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                 runCatching { temp.delete() }
             }
         }
+        return count
     }
 
     companion object {

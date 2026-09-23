@@ -23,6 +23,9 @@ interface ArchivedImageDao {
     @Query("SELECT * FROM archived_images WHERE originalPath = :path LIMIT 1")
     suspend fun findByOriginalPath(path: String): ArchivedImage?
 
+    @Query("SELECT originalPath FROM archived_images WHERE originalPath IS NOT NULL")
+    suspend fun findAllOriginalPaths(): List<String>
+
     @Query("UPDATE archived_images SET receivedCount = receivedCount + 1 WHERE id = :id")
     suspend fun incrementReceivedCount(id: Long)
 

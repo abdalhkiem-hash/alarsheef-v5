@@ -392,10 +392,13 @@ class ArchiveRepository(context: Context) {
         }
     }
 
-    suspend fun findByOriginalPath(path: String): ArchivedImage? =
-        imageDao.findByOriginalPath(path)
+     suspend fun findByOriginalPath(path: String): ArchivedImage? =
+         imageDao.findByOriginalPath(path)
 
-    // ---------- الذكاء الاصطناعي (التحليل + الوجوه + البحث) ----------
+     suspend fun findAllOriginalPaths(): List<String> =
+         imageDao.findAllOriginalPaths()
+
+     // ---------- الذكاء الاصطناعي (التحليل + الوجوه + البحث) ----------
 
     fun observeLabelsForImage(imageId: Long) = aiDao.observeLabelsForImage(imageId)
 
