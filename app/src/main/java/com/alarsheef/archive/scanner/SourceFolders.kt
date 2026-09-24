@@ -8,10 +8,11 @@ import kotlinx.coroutines.flow.first
 /**
  * تُحدّد المجلدات المصدر التي يفحصها الفحص اليومي.
  *
- * المبدأ بعد هجرة التخزين (إزالة MANAGE_EXTERNAL_STORAGE):
- * - **معرض الصور** (DCIM، Pictures): يُستعلم عبر **MediaStore** بصلاحية READ_MEDIA_IMAGES
- *   — لا حاجة لصلاحية الوصول لكل الملفات.
- * - **واتساب** (صور + وثائق) و**التنزيلات** وأي مجلد مخصص: عبر **SAF**
+ * المبدأ بعد هجرة التخزين (إزالة MANAGE_EXTERNAL_STORAGE) + التبسيط (P1):
+ * - **الصور** (المعرض، واتساب، واتساب أعمال، تنزيلات): تُضاف كمجلدات **MediaStore**
+ *   (placeholder) — لا تحتاج أي اختيار مجلد يدوي؛ صلاحية READ_MEDIA_IMAGES تكفي،
+ *   واستعلام MediaStore واحد سريع يكتشفها كلها.
+ * - **الوثائق وملفات PDF** (وثائق واتساب، تنزيلات، مخصص): عبر **SAF**
  *   (يختارها المستخدم مرة واحدة من منتقي النظام ويُحفظ معرّف الشجرة).
  */
 object SourceFolders {
@@ -22,59 +23,43 @@ object SourceFolders {
         SourceFolder(SourceApp.GALLERY, "معرض الصور", FolderType.MediaStoreRelativePath("Pictures")),
     )
 
-    /** مجلدات SAF من الإعدادات (واتساب صور، وثائق، تنزيلات، مخصص). */
-    suspend fun safFolders(prefs: SettingsPreferences): List<SourceFolder> = buildList {
-        prefs.whatsappImagesTreeUri.first()?.let {
-            add(SourceFolder(SourceApp.WHATSAPP, "صور واتساب", FolderType.Saf(Uri.parse(it))))
-        }
-        prefs.whatsappDocumentsTreeUri.first()?.let {
-            add(SourceFolder(SourceApp.WHATSAPP, "وثائق واتساب", FolderType.Saf(Uri.parse(it))))
-        }
-        prefs.whatsappBusinessImagesTreeUri.first()?.let {
-            add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "صور واتساب أعمال", FolderType.Saf(Uri.parse(it))))
-        }
-        prefs.whatsappBusinessDocumentsTreeUri.first()?.let {
-            add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "وثائق واتساب أعمال", FolderType.Saf(Uri.parse(it))))
-        }
-        prefs.downloadsTreeUri.first()?.let {
-            add(SourceFolder(SourceApp.DOWNLOADS, "التنزيلات", FolderType.Saf(Uri.parse(it))))
-        }
-        prefs.importFolderUri.first()?.let {
-            add(SourceFolder(SourceApp.DOWNLOADS, "مجلد الاستيراد المخصص", FolderType.Saf(Uri.parse(it))))
-        }
-    }
-
     /** المجلدات الفعّالة حسب الإعدادات. */
     suspend fun activeFolders(prefs: SettingsPreferences): List<SourceFolder> {
         val list = mutableListOf<SourceFolder>()
+
+        // المعرض: MediaStore فقط
         if (prefs.sourceGallery.first()) list.addAll(galleryMediaStoreFolders())
-        val whatsapp = prefs.sourceWhatsapp.first()
-        val whatsappBusiness = prefs.sourceWhatsappBusiness.first()
-        val downloads = prefs.sourceDownloads.first()
-        if (whatsapp) {
-            prefs.whatsappImagesTreeUri.first()?.let {
-                list.add(SourceFolder(SourceApp.WHATSAPP, "صور واتساب", FolderType.Saf(Uri.parse(it))))
-            }
+
+        // واتساب: placeholder MediaStore للصور (لا يحتاج SAF) + SAF للوثائق فقط
+        if (prefs.sourceWhatsapp.first()) {
+            list.add(SourceFolder(SourceApp.WHATSAPP, "صور واتساب",
+                FolderType.MediaStoreRelativePath("WhatsApp/Media/WhatsApp Images")))
             prefs.whatsappDocumentsTreeUri.first()?.let {
                 list.add(SourceFolder(SourceApp.WHATSAPP, "وثائق واتساب", FolderType.Saf(Uri.parse(it))))
             }
         }
-        if (whatsappBusiness) {
-            prefs.whatsappBusinessImagesTreeUri.first()?.let {
-                list.add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "صور واتساب أعمال", FolderType.Saf(Uri.parse(it))))
-            }
+
+        // واتساب أعمال: placeholder MediaStore للصور (لا يحتاج SAF) + SAF للوثائق فقط
+        if (prefs.sourceWhatsappBusiness.first()) {
+            list.add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "صور واتساب أعمال",
+                FolderType.MediaStoreRelativePath("Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Images")))
             prefs.whatsappBusinessDocumentsTreeUri.first()?.let {
                 list.add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "وثائق واتساب أعمال", FolderType.Saf(Uri.parse(it))))
             }
         }
-        if (downloads) {
+
+        // التنزيلات: placeholder MediaStore للصور + SAF لملفات غير الصور
+        if (prefs.sourceDownloads.first()) {
+            list.add(SourceFolder(SourceApp.DOWNLOADS, "التنزيلات",
+                FolderType.MediaStoreRelativePath("Download")))
             prefs.downloadsTreeUri.first()?.let {
-                list.add(SourceFolder(SourceApp.DOWNLOADS, "التنزيلات", FolderType.Saf(Uri.parse(it))))
+                list.add(SourceFolder(SourceApp.DOWNLOADS, "التنزيلات (ملفات)", FolderType.Saf(Uri.parse(it))))
             }
             prefs.importFolderUri.first()?.let {
                 list.add(SourceFolder(SourceApp.DOWNLOADS, "مجلد الاستيراد المخصص", FolderType.Saf(Uri.parse(it))))
             }
         }
+
         return list
     }
 }

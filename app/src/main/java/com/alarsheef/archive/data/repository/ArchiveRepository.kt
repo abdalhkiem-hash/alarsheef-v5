@@ -258,13 +258,16 @@ class ArchiveRepository(context: Context) {
      * @param countDuplicate يزيد عدّاد "استُلمت N مرات" عند التكرار.
      * @param originalPath المسار الأصلي للملف في مصدره؛ يُعبَّأ لملفات الفحص
      *        التلقائي الثابتة فقط (يُستخدم لتخطي إعادة معالجة نفس الملف يوميًا).
+     * @param originalDate تاريخ الملف الأصلي (التقاط/استلام) بالمللي ثانية؛
+     *        يُستخدم لوضعه في مجلد تاريخه الصحيح بدل تاريخ الاستيراد.
      */
     suspend fun importFile(
         sourceFile: File,
         sourceApp: SourceApp,
         deleteSourceAfterImport: Boolean = true,
         countDuplicate: Boolean = true,
-        originalPath: String? = null
+        originalPath: String? = null,
+        originalDate: Long? = null,
     ): ImportResult = withContext(Dispatchers.IO) {
         try {
             if (!sourceFile.exists() || sourceFile.length() == 0L) return@withContext ImportResult.Failed
@@ -277,7 +280,13 @@ class ArchiveRepository(context: Context) {
                 return@withContext ImportResult.Duplicate(existing.receivedCount + if (countDuplicate) 1 else 0)
             }
 
-            val (year, month, day) = FileUtils.today()
+            val dateMillis = originalDate?.takeIf { it > 0 }
+                ?: sourceFile.lastModified().takeIf { it > 0 }
+                ?: System.currentTimeMillis()
+            val cal = java.util.Calendar.getInstance().apply { timeInMillis = dateMillis }
+            val year = cal.get(java.util.Calendar.YEAR)
+            val month = cal.get(java.util.Calendar.MONTH) + 1
+            val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
             val targetDir = FileUtils.dayFolder(rootDir, year, month, day)
             val ext = sourceFile.extension.ifBlank { "jpg" }
             val baseName = "IMG_${year}${"%02d".format(month)}${"%02d".format(day)}_${System.currentTimeMillis() % 100000}"
@@ -285,7 +294,7 @@ class ArchiveRepository(context: Context) {
             val destination = File(targetDir, destName)
 
             sourceFile.copyTo(destination, overwrite = true)
-            val capturedAt = sourceFile.lastModified().takeIf { it > 0 } ?: System.currentTimeMillis()
+            val capturedAt = dateMillis
             if (deleteSourceAfterImport) sourceFile.delete()
 
             imageDao.insert(

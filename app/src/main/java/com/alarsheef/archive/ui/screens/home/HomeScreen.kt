@@ -300,16 +300,8 @@ when (target) {
                          pendingTreeTarget = "import"
                          treeLauncher.launch(null)
                      },
-                     onPickWhatsappImages = {
-                         pendingTreeTarget = "whatsapp_images"
-                         treeLauncher.launch(null)
-                     },
                       onPickWhatsappDocs = {
                           pendingTreeTarget = "whatsapp_docs"
-                          treeLauncher.launch(null)
-                      },
-                      onPickWhatsappBizImages = {
-                          pendingTreeTarget = "whatsapp_biz_images"
                           treeLauncher.launch(null)
                       },
                       onPickWhatsappBizDocs = {

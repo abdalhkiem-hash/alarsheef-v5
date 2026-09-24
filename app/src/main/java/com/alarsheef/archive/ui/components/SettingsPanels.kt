@@ -30,9 +30,7 @@ fun SettingsPanelContent(
     prefs: SettingsPreferences,
     scope: CoroutineScope,
     onPickImportFolder: () -> Unit,
-    onPickWhatsappImages: () -> Unit,
     onPickWhatsappDocs: () -> Unit,
-    onPickWhatsappBizImages: () -> Unit,
     onPickWhatsappBizDocs: () -> Unit,
     onPickDownloads: () -> Unit,
 ) {
@@ -66,10 +64,9 @@ fun SettingsPanelContent(
         SwitchRow("استثناء الصور الشخصية/العائلية (كشف الوجوه)", excludePersonal) {
             scope.launch { prefs.setExcludePersonalPhotos(it) }
         }
-        Text("مجلدات المصدر (SAF — اخترها من منتقي النظام)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
-        OutlinedButton(onClick = onPickWhatsappImages, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد صور واتساب") }
+        Text("الصور تُستورد تلقائيًا عبر MediaStore (بدون اختيار مجلد)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
+        Text("مجلدات الوثائق والملفات (SAF — اخترها من منتقي النظام)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
         OutlinedButton(onClick = onPickWhatsappDocs, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد وثائق واتساب") }
-        OutlinedButton(onClick = onPickWhatsappBizImages, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد صور واتساب أعمال") }
         OutlinedButton(onClick = onPickWhatsappBizDocs, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد وثائق واتساب أعمال") }
         OutlinedButton(onClick = onPickDownloads, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("تحديد مجلد التنزيلات") }
         OutlinedButton(

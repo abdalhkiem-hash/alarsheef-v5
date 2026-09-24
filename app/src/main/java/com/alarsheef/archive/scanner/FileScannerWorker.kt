@@ -2,7 +2,6 @@ package com.alarsheef.archive.scanner
 
 import android.content.ContentUris
 import android.content.Context
-import android.database.Cursor
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
@@ -28,16 +27,17 @@ import java.io.IOException
  * وأرشفة أي صورة أو PDF جديد.
  *
  * بعد هجرة التخزين (إزالة MANAGE_EXTERNAL_STORAGE):
- * - **معرض الصور** (DCIM، Pictures، واتساب صور، تنزيلات صور): يُستعلم عبر **MediaStore**
- *   بصلاحية READ_MEDIA_IMAGES/VIDEO فقط.
- * - **وثائق** و**ملفات غير صور** (وثائق واتساب، تنزيلات PDF، مخصص): عبر **SAF**
+ * - **الصور** (المعرض، واتساب، واتساب أعمال، تنزيلات): تُستعلم عبر **MediaStore**
+ *   باستعلام واحد سريع بصلاحية READ_MEDIA_IMAGES/VIDEO فقط.
+ * - **الوثائق وملفات PDF** وملفات غير صور (وثائق واتساب، تنزيلات، مخصص): عبر **SAF**
  *   (يختارها المستخدم مرة واحدة من منتقي النظام).
  *
- * - الأرشفة يومية بمبدأ "ملف اليوم بيومه": يُستورد فقط الملف الذي يقع وقت
- *   تعديله (DATE_ADDED/lastModified) في يوم الفحص نفسه.
+ * - الأرشفة يومية بمبدأ "ملف اليوم بيومه": يُستورد فقط الملف الذي وصل MediaStore
+ *   (DATE_ADDED) أو عُدِّل (SAF lastModified) في يوم الفحص نفسه.
+ * - يُحفظ الملف في مجلد **تاريخه الأصلي** (DATE_TAKEN/DATE_MODIFIED) بدل تاريخ الاستيراد.
  * - تتبّع originalPath يمنع إعادة معالجة نفس الملف يوميًا.
  * - **التحسينات**: تحميل جميع originalPaths مرة واحدة، تجاهل كشف الوجوه إن لم يُفعَّل،
- *   معالجة متوازية، وبدء التحليل الذكي فقط عند وجود صور جديدة.
+ *   وبدء التحليل الذكي فقط عند وجود صور جديدة.
  */
 class FileScannerWorker(context: Context, params: WorkerParameters)
     : CoroutineWorker(context, params) {
@@ -58,14 +58,14 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
 
             var newImagesCount = 0
 
-            // فحص MediaStore: كل الصور المضافة اليوم (المعرض + واتساب صور + تنزيلات صور)
+            // فحص MediaStore: كل الصور (المعرض + واتساب + واتساب أعمال + تنزيلات)
             newImagesCount += scanMediaStore(repository, todayStart, excludePersonalPhotos, folders, existingPaths)
 
-            // فحص SAF: المجلدات التي يختارها المستخدم (وثائق، ملفات، مخصص)
+            // فحص SAF: الوثائق وملفات PDF فقط (الصور تُعالَج عبر MediaStore أعلاه)
             for (folder in folders) {
                 if (folder.type is FolderType.Saf) {
                     newImagesCount += scanSafFolder(folder.type.treeUri, folder.source, repository,
-                        excludePersonalPhotos, todayStart, existingPaths)
+                        todayStart, existingPaths)
                 }
             }
 
@@ -86,11 +86,14 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         }
     }
 
-    // ---------- MediaStore ----------
+    // ---------- MediaStore (صور فقط — استعلام واحد سريع) ----------
 
     /**
      * يستعلم MediaStore عن الصور المضافة منذ بداية اليوم، ويحدد مصدر كل صورة
      * من مسارها النسبي، ثم يستوردها إن كانت من مصدر مفعّل.
+     *
+     * يقرأ DATE_TAKEN (تاريخ الالتقاط الأصلي) أو DATE_MODIFIED كتاريخ للأرشفة
+     * بدل تاريخ الاستيراد.
      *
      * @param existingPaths مجموعة المسارات المأرشفة مسبقًا (تُحمَّل مرة واحدة).
      * @return عدد الصور الجديدة التي تم استيرادها.
@@ -108,6 +111,8 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
             MediaStore.Images.Media._ID,
             MediaStore.Images.Media.DISPLAY_NAME,
             MediaStore.Images.Media.RELATIVE_PATH,
+            MediaStore.Images.Media.DATE_TAKEN,
+            MediaStore.Images.Media.DATE_MODIFIED,
         )
         val selection = "${MediaStore.Images.Media.DATE_ADDED} >= ?"
         val args = arrayOf(todayStartSeconds)
@@ -122,6 +127,8 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                 val idCol = cursor.getColumnIndex(MediaStore.Images.Media._ID)
                 val nameCol = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
                 val pathCol = cursor.getColumnIndex(MediaStore.Images.Media.RELATIVE_PATH)
+                val takenCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_TAKEN)
+                val modifiedCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_MODIFIED)
                 while (cursor.moveToNext()) {
                     currentCoroutineContext().ensureActive()
                     val id = cursor.getLong(idCol)
@@ -132,6 +139,11 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     val originalPath = "$relativePath/$displayName"
                     if (originalPath in existingPaths) continue
                     if (!FileUtils.isImage(displayName)) continue
+
+                    // تاريخ الأرشفة: DATE_TAKEN (الالتقاط الأصلي) ثم DATE_MODIFIED
+                    val dateTakenMs = if (takenCol >= 0 && !cursor.isNull(takenCol)) cursor.getLong(takenCol) else 0L
+                    val dateModifiedSec = if (modifiedCol >= 0 && !cursor.isNull(modifiedCol)) cursor.getLong(modifiedCol) else 0L
+                    val originalDate = dateTakenMs.takeIf { it > 0 } ?: dateModifiedSec * 1000
 
                     val isPersonal = excludePersonalPhotos &&
                         FaceDetectionUtil.hasFace(applicationContext,
@@ -145,6 +157,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                             sourceFile = temp, sourceApp = source,
                             deleteSourceAfterImport = true, countDuplicate = true,
                             originalPath = originalPath,
+                            originalDate = originalDate,
                         )
                         if (result is ImportResult.Added) count++
                     } finally {
@@ -173,25 +186,23 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         temp
     }
 
-    // ---------- SAF ----------
+    // ---------- SAF (وثائق وPDF فقط — الصور عبر MediaStore) ----------
 
     private suspend fun scanSafFolder(
         treeUri: Uri,
         source: SourceApp,
         repository: ArchiveRepository,
-        excludePersonalPhotos: Boolean,
         todayStart: Long,
         existingPaths: Set<String>,
     ): Int {
         val root = DocumentFile.fromTreeUri(applicationContext, treeUri) ?: return 0
-        return visitDocuments(root, source, repository, excludePersonalPhotos, todayStart, 0, existingPaths)
+        return visitDocuments(root, source, repository, todayStart, 0, existingPaths)
     }
 
     private suspend fun visitDocuments(
         folder: DocumentFile,
         source: SourceApp,
         repository: ArchiveRepository,
-        excludePersonalPhotos: Boolean,
         todayStart: Long,
         depth: Int,
         existingPaths: Set<String>,
@@ -201,7 +212,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         for (doc in folder.listFiles()) {
             currentCoroutineContext().ensureActive()
             if (doc.isDirectory) {
-                count += visitDocuments(doc, source, repository, excludePersonalPhotos, todayStart, depth + 1, existingPaths)
+                count += visitDocuments(doc, source, repository, todayStart, depth + 1, existingPaths)
                 continue
             }
             if (!doc.isFile || doc.name == null) continue
@@ -209,23 +220,20 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
             val docIdentity = doc.uri.toString()
             if (docIdentity in existingPaths) continue
 
-            val temp = File(applicationContext.cacheDir, "custom_${System.nanoTime()}_${doc.name}")
-            try {
-                applicationContext.contentResolver.openInputStream(doc.uri)?.use { input ->
-                    temp.outputStream().use { output -> input.copyTo(output) }
-                } ?: continue
-                val name = doc.name ?: continue
-                if (!FileUtils.isImage(name)) {
-                    val isPersonal = excludePersonalPhotos && FaceDetectionUtil.hasFace(temp)
-                    if (isPersonal) continue
-                    val result = repository.importFile(
-                        sourceFile = temp, sourceApp = source,
-                        deleteSourceAfterImport = true, countDuplicate = true,
-                        originalPath = docIdentity,
-                    )
-                    if (result is ImportResult.Added) count++
-                } else if (FileUtils.isPdf(name)) {
-                    Log.i(TAG, "معالجة PDF: ${name}")
+            val name = doc.name ?: continue
+
+            // P1: الصور تُعالج عبر MediaStore (أسرع بكثير) — نتخطاها هنا
+            if (FileUtils.isImage(name)) continue
+
+            // P0: تحديد النوع قبل النسخ لتجنب نسخ ملف ثم ترميده
+            if (FileUtils.isPdf(name)) {
+                // P0: فرع PDF كان مستحيل الوصول إليه (منطق معكوس) — أصبح يعمل الآن
+                val temp = File(applicationContext.cacheDir, "pdf_${System.nanoTime()}_$name")
+                try {
+                    applicationContext.contentResolver.openInputStream(doc.uri)?.use { input ->
+                        temp.outputStream().use { output -> input.copyTo(output) }
+                    } ?: continue
+                    Log.i(TAG, "معالجة PDF: $name")
                     val pages = PdfToImageConverter.convertToPngPages(applicationContext, temp)
                     Log.i(TAG, "صفحات PDF ${name}: ${pages.size}")
                     var pdfCount = 0
@@ -234,17 +242,38 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                             sourceFile = page, sourceApp = source,
                             deleteSourceAfterImport = true, countDuplicate = false,
                             originalPath = null,
+                            originalDate = doc.lastModified(),
                         )
                         if (result is ImportResult.Added) pdfCount++
                         page.delete()
                     }
                     count += pdfCount
+                } catch (e: SecurityException) {
+                } catch (e: IOException) {
+                    throw e
+                } finally {
+                    runCatching { temp.delete() }
                 }
-            } catch (e: SecurityException) {
-            } catch (e: IOException) {
-                throw e
-            } finally {
-                runCatching { temp.delete() }
+            } else {
+                // ملف غير صور ولا PDF (وثيقة نصية، سجل، إلخ) — استيراد خام
+                val temp = File(applicationContext.cacheDir, "custom_${System.nanoTime()}_$name")
+                try {
+                    applicationContext.contentResolver.openInputStream(doc.uri)?.use { input ->
+                        temp.outputStream().use { output -> input.copyTo(output) }
+                    } ?: continue
+                    val result = repository.importFile(
+                        sourceFile = temp, sourceApp = source,
+                        deleteSourceAfterImport = true, countDuplicate = true,
+                        originalPath = docIdentity,
+                        originalDate = doc.lastModified(),
+                    )
+                    if (result is ImportResult.Added) count++
+                } catch (e: SecurityException) {
+                } catch (e: IOException) {
+                    throw e
+                } finally {
+                    runCatching { temp.delete() }
+                }
             }
         }
         return count
