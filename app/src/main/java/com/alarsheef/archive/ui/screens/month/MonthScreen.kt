@@ -189,7 +189,7 @@ fun MonthScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Teal, titleContentColor = Color.White)
             )
         },
-        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, onAddDay = {}) }
+        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }) }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
             SearchField(query = query, onQueryChange = { query = it }, placeholder = "ابحث في أشهر $year...")

@@ -234,7 +234,6 @@ fun FilesScreen(
                 snackbarHostState = snackbarHostState,
                 scope = scope,
                 onAddFolder = { showNewFolderDialog = true },
-                onAddDay = {},
                 onExportAll = { pendingExportDay = day; exportLauncher.launch("alarsheef-$year-${FileUtils.twoDigits(month)}-${FileUtils.twoDigits(day)}.zip") },
                 onImportZip = { importLauncher.launch(arrayOf("application/zip")) }
             )

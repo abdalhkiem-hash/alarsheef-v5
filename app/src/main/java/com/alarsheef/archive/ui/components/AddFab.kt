@@ -30,6 +30,7 @@ import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.data.repository.ImportResult
 import com.alarsheef.archive.ui.theme.Amber
+import com.alarsheef.archive.util.FeatureFlags
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
@@ -40,7 +41,7 @@ fun AddFab(
     snackbarHostState: SnackbarHostState,
     scope: CoroutineScope,
     onAddFolder: () -> Unit,
-    onAddDay: () -> Unit,
+    onAddDay: (() -> Unit)? = null,
     onExportAll: (() -> Unit)? = null,
     onImportZip: (() -> Unit)? = null
 ) {
@@ -118,22 +119,26 @@ fun AddFab(
                     galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }
             )
-            DropdownMenuItem(
-                text = { Text("إضافة مجلد") },
-                leadingIcon = { Icon(Icons.Filled.Create, contentDescription = null) },
-                onClick = {
-                    menuExpanded = false
-                    onAddFolder()
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("إضافة يوم") },
-                leadingIcon = { Icon(Icons.Filled.CalendarViewDay, contentDescription = null) },
-                onClick = {
-                    menuExpanded = false
-                    onAddDay()
-                }
-            )
+            if (FeatureFlags.SUB_FOLDERS_ENABLED) {
+                DropdownMenuItem(
+                    text = { Text("إضافة مجلد") },
+                    leadingIcon = { Icon(Icons.Filled.Create, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        onAddFolder()
+                    }
+                )
+            }
+            if (onAddDay != null) {
+                DropdownMenuItem(
+                    text = { Text("إضافة يوم") },
+                    leadingIcon = { Icon(Icons.Filled.CalendarViewDay, contentDescription = null) },
+                    onClick = {
+                        menuExpanded = false
+                        onAddDay()
+                    }
+                )
+            }
             if (onExportAll != null) {
                 DropdownMenuItem(
                     text = { Text("تصدير كل الملفات (ZIP)") },

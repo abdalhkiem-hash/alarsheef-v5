@@ -8,6 +8,7 @@
 /captures
 .externalNativeBuild
 .cxx
+**/build/
 **/build/tmp/
 **/build/intermediates/
 **/build/kspCaches/
@@ -15,3 +16,14 @@
 **/build/snapshot/
 **/build/test-results/
 **/build/reports/
+**/.gradle/
+**/.cxx/
+**/.externalNativeBuild/
+**/.idea/
+**/local.properties
+**/*.iml
+
+# سجلات جلسات أداة opencode — ليست جزءًا من كود المشروع
+/arsheef.json
+/1arsheef.json
+/2arsheef.json
