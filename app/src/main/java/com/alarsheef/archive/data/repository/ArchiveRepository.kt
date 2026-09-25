@@ -1,4 +1,4 @@
-package com.alarsheef.archive.data.repository
+﻿package com.alarsheef.archive.data.repository
 
 import android.content.Context
 import android.graphics.BitmapFactory
@@ -159,7 +159,7 @@ class ArchiveRepository(context: Context) {
 
     suspend fun deleteMonth(year: Int, month: Int) = withContext(Dispatchers.IO) {
         cleanupAiRowsForImages(imageDao.getByMonthOnce(year, month))
-        val monthStr = "%02d".format(month)
+        val monthStr = FileUtils.twoDigits(month)
         File(rootDir, "archive/$year/$monthStr").deleteRecursively()
         imageDao.deleteMonth(year, month)
         labelDao.clearLabel("m-$year-$month")
@@ -168,8 +168,8 @@ class ArchiveRepository(context: Context) {
 
     suspend fun deleteDay(year: Int, month: Int, day: Int) = withContext(Dispatchers.IO) {
         cleanupAiRowsForImages(imageDao.getByDayOnce(year, month, day))
-        val monthStr = "%02d".format(month)
-        val dayStr = "%02d".format(day)
+        val monthStr = FileUtils.twoDigits(month)
+        val dayStr = FileUtils.twoDigits(day)
         File(rootDir, "archive/$year/$monthStr/$dayStr").deleteRecursively()
         imageDao.deleteDay(year, month, day)
         labelDao.clearLabel("d-$year-$month-$day")
@@ -269,6 +269,7 @@ class ArchiveRepository(context: Context) {
         originalPath: String? = null,
         originalDate: Long? = null,
     ): ImportResult = withContext(Dispatchers.IO) {
+        var destination: File? = null
         try {
             if (!sourceFile.exists() || sourceFile.length() == 0L) return@withContext ImportResult.Failed
 
@@ -276,6 +277,11 @@ class ArchiveRepository(context: Context) {
             val existing = imageDao.findByContentHash(hash)
             if (existing != null) {
                 if (countDuplicate) imageDao.incrementReceivedCount(existing.id)
+                // تملأ مسار المصدر على السجل الموجود إن كان فارغًا، حتى لا يُعاد
+                // اكتشاف نفس الملف في كل فحص (بوابة المسارات السريعة تعتمد عليه).
+                if (originalPath != null && existing.originalPath == null) {
+                    imageDao.claimOriginalPath(existing.id, originalPath)
+                }
                 if (deleteSourceAfterImport) sourceFile.delete()
                 return@withContext ImportResult.Duplicate(existing.receivedCount + if (countDuplicate) 1 else 0)
             }
@@ -289,18 +295,19 @@ class ArchiveRepository(context: Context) {
             val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
             val targetDir = FileUtils.dayFolder(rootDir, year, month, day)
             val ext = sourceFile.extension.ifBlank { "jpg" }
-            val baseName = "IMG_${year}${"%02d".format(month)}${"%02d".format(day)}_${System.currentTimeMillis() % 100000}"
+            val baseName = "IMG_${year}${FileUtils.twoDigits(month)}${FileUtils.twoDigits(day)}_${System.currentTimeMillis() % 100000}"
             val destName = FileUtils.uniqueName(baseName, ext, targetDir)
-            val destination = File(targetDir, destName)
+            val destFile = File(targetDir, destName)
+            destination = destFile
 
-            sourceFile.copyTo(destination, overwrite = true)
+            sourceFile.copyTo(destFile, overwrite = true)
             val capturedAt = dateMillis
             if (deleteSourceAfterImport) sourceFile.delete()
 
             imageDao.insert(
                 ArchivedImage(
                     fileName = destName,
-                    storedPath = destination.absolutePath,
+                    storedPath = destFile.absolutePath,
                     contentHash = hash,
                     sourceApp = sourceApp,
                     receivedCount = 1,
@@ -312,6 +319,9 @@ class ArchiveRepository(context: Context) {
             )
             ImportResult.Added
         } catch (e: Exception) {
+            // لو فشل الإدراج (تضارب فهرس التفرّد عند سباق فحصين) يبقى الملف المنسوخ
+            // على القرص بلا سجل — نحذفه حتى لا يتراكم كملف يتيم.
+            destination?.let { dest -> runCatching { if (dest.exists()) dest.delete() } }
             ImportResult.Failed
         }
     }
@@ -376,7 +386,7 @@ class ArchiveRepository(context: Context) {
             val targetDir = FileUtils.dayFolder(rootDir, year, month, day)
             val ext = sourceFile.extension.ifBlank { "jpg" }
             val baseName = preferredName?.substringBeforeLast('.', "")?.ifBlank { null }
-                ?: "IMG_${year}${"%02d".format(month)}${"%02d".format(day)}_${System.currentTimeMillis() % 100000}"
+                ?: "IMG_${year}${FileUtils.twoDigits(month)}${FileUtils.twoDigits(day)}_${System.currentTimeMillis() % 100000}"
             val destName = FileUtils.uniqueName(baseName, ext, targetDir)
             val destination = File(targetDir, destName)
 

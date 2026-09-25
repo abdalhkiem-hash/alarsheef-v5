@@ -16,14 +16,18 @@ object PdfToImageConverter {
 
     private const val TAG = "PdfToImage"
 
-    /** دقة التصيير النهائية: 400 نقطة في البوصة — دون أي فقدان جودة (القسم 11.1) */
-    private const val TARGET_DPI = 400
+    /**
+     * دقة التصيير النهائية: 200 نقطة في البوصة — تكفي بوضوح للقراءة والـ OCR،
+     * وتخفّض ذاكرة الصفحة من ≈61 إلى ≈15 ميجابايت لورقة A4 فتقل أخطاء OOM
+     * التي كانت تحذف صفحات بصمت.
+     */
+    private const val TARGET_DPI = 200
 
     /**
      * سقف أمان لأبعاد الصفحة الواحدة (بكسل بالضلع الأطول). يحمي فقط من الصفحات
-     * الشاذة أو الملفات التالفة؛ لا يؤثر إطلاقًا على أي حجم ورق طبيعي عند 400 DPI.
+     * الشاذة أو الملفات التالفة؛ لا يؤثر على أي حجم ورق طبيعي عند 200 DPI.
      */
-    private const val MAX_DIMENSION = 8000
+    private const val MAX_DIMENSION = 4000
 
     /** سقف عدد الصفحات للملف الواحد، حماية من ملفات PDF الضخمة */
     private const val MAX_PAGES = 100
@@ -34,9 +38,9 @@ object PdfToImageConverter {
      *
      * نستخدم ARGB_8888 — وليس RGB_565 — لأن PdfRenderer.render() يشترطه
      * ويرفض غيره برسالة Unsupported pixel format. صفحات المستندات لا تحتاج
-     * قناة شفافية، لكن دعم النظام للنوع مفروض؛ يُعوَّض استهلاك الذاكرة الضخم
-     * (≈ 61 ميجابايت لصفحة A4 عند 400 DPI والأضلاع 3308×4677) بتصيير صفحة
-     * واحدة في كل دورة وبتقليص الممتد فوق سقف الحد الأقصى الآمن.
+     * قناة شفافية، لكن دعم النظام للنوع مفروض؛ يُعوَّض استهلاك الذاكرة
+     * (≈ 15 ميجابايت لصفحة A4 عند 200 DPI) بتصيير صفحة واحدة في كل دورة
+     * وبتقليص الممتد فوق سقف الحد الأقصى الآمن.
      */
     fun convertToPngPages(context: Context, pdfFile: File): List<File> {
         val results = mutableListOf<File>()
@@ -47,6 +51,9 @@ object PdfToImageConverter {
             pfd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
             renderer = PdfRenderer(pfd)
 
+            if (renderer.pageCount > MAX_PAGES) {
+                Log.w(TAG, "PDF ${pdfFile.name}: ${renderer.pageCount} صفحة — ستُعالَج أول $MAX_PAGES فقط")
+            }
             val pageCount = min(renderer.pageCount, MAX_PAGES)
             for (i in 0 until pageCount) {
                 var bitmap: Bitmap? = null
@@ -67,7 +74,9 @@ object PdfToImageConverter {
                     Canvas(bitmap).drawColor(Color.WHITE)
                     page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
-                    val outFile = File(context.cacheDir, "pdfpage_${System.currentTimeMillis()}_$i.png")
+                    // nanoTime بدل currentTimeMillis: صفحات من ملفين في نفس اللترية
+                    // لا تمحو بعضها (قد يتقاسم currentTimeMillis نفس القيمة).
+                    val outFile = File(context.cacheDir, "pdfpage_${System.nanoTime()}_$i.png")
                     FileOutputStream(outFile).use { out ->
                         bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                     }

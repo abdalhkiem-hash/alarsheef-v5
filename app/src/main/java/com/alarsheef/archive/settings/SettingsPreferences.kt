@@ -22,6 +22,8 @@ class SettingsPreferences(private val context: Context) {
         val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at")
         val EXCLUDE_PERSONAL_PHOTOS = booleanPreferencesKey("exclude_personal_photos")
+        /** استيراد المستندات فقط (يرفض الصور العائلية والمناظر). */
+        val DOCUMENTS_ONLY = booleanPreferencesKey("documents_only")
         val LAST_SCAN_AT = longPreferencesKey("last_scan_at")
         val AI_OCR_ENABLED = booleanPreferencesKey("ai_ocr_enabled")
         val AI_LABELS_ENABLED = booleanPreferencesKey("ai_labels_enabled")
@@ -49,6 +51,8 @@ class SettingsPreferences(private val context: Context) {
     val backupFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.BACKUP_FOLDER_URI] }
     val lastBackupAt: Flow<Long> = context.appDataStore.data.map { it[Keys.LAST_BACKUP_AT] ?: 0L }
     val excludePersonalPhotos: Flow<Boolean> = context.appDataStore.data.map { it[Keys.EXCLUDE_PERSONAL_PHOTOS] ?: true }
+    /** افتراضيًا مفعّل: الأرشيف للمستندات (فواتير/حوالات/حركات) لا للصور العائلية. */
+    val documentsOnly: Flow<Boolean> = context.appDataStore.data.map { it[Keys.DOCUMENTS_ONLY] ?: true }
     val aiOcrEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.AI_OCR_ENABLED] ?: true }
     val aiLabelsEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.AI_LABELS_ENABLED] ?: true }
     val aiFacesEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.AI_FACES_ENABLED] ?: true }
@@ -78,6 +82,7 @@ class SettingsPreferences(private val context: Context) {
     }
     suspend fun setLastBackupAt(v: Long) { context.appDataStore.edit { it[Keys.LAST_BACKUP_AT] = v } }
     suspend fun setExcludePersonalPhotos(v: Boolean) { context.appDataStore.edit { it[Keys.EXCLUDE_PERSONAL_PHOTOS] = v } }
+    suspend fun setDocumentsOnly(v: Boolean) { context.appDataStore.edit { it[Keys.DOCUMENTS_ONLY] = v } }
     suspend fun setLastScanAt(v: Long) { context.appDataStore.edit { it[Keys.LAST_SCAN_AT] = v } }
     suspend fun setAiOcrEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_OCR_ENABLED] = v } }
     suspend fun setAiLabelsEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_LABELS_ENABLED] = v } }

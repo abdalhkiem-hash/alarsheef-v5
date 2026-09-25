@@ -26,6 +26,14 @@ interface ArchivedImageDao {
     @Query("SELECT originalPath FROM archived_images WHERE originalPath IS NOT NULL")
     suspend fun findAllOriginalPaths(): List<String>
 
+    /**
+     * يملأ مسار الملف الأصلي على سجل موجود لو كان فارغًا (عند اكتشاف تكرار بالبصمة).
+     * يمنع إعادة فحص نفس الملف في كل يوم — بدون هذا يبقى originalPath = null للأبد
+     * فتتجاهله بوابة المسارات السريعة وتُعاد معالجته كل فحص.
+     */
+    @Query("UPDATE archived_images SET originalPath = :path WHERE id = :id AND originalPath IS NULL")
+    suspend fun claimOriginalPath(id: Long, path: String)
+
     @Query("UPDATE archived_images SET receivedCount = receivedCount + 1 WHERE id = :id")
     suspend fun incrementReceivedCount(id: Long)
 

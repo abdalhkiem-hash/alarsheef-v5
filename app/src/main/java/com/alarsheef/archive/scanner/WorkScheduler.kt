@@ -1,6 +1,7 @@
 package com.alarsheef.archive.scanner
 
 import android.content.Context
+import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -35,9 +36,12 @@ object WorkScheduler {
     /** يشغّل فحصًا فوريًا لمرة واحدة (يُستخدم عند تفعيل الإعداد أول مرة، بدل انتظار 24 ساعة) */
     fun runOnce(context: Context) {
         val request = OneTimeWorkRequestBuilder<FileScannerWorker>().build()
+        Log.i("WorkScheduler", "طلب فحص يدوي فوري")
+        // REPLACE بدل KEEP: زر "فحص الآن" يجب أن يستجيب دائمًا حتى لو كان
+        // هناك طلب قديم عالقًا في تأخير إعادة المحاولة (backoff) لا يُشغَّل.
         WorkManager.getInstance(context).enqueueUniqueWork(
             FileScannerWorker.ONE_TIME_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.REPLACE,
             request
         )
     }

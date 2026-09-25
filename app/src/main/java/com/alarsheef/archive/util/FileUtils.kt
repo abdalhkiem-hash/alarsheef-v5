@@ -7,7 +7,12 @@ import java.util.Locale
 
 object FileUtils {
 
-    val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "heic")
+    /**
+     * امتدادات الصور — تشمل الصيغ الشائعة كي تمرّ كلها من مسار MediaStore
+     * الموحّد (بهوية المسار النسبي) بدل أن تقع من SAF بهوية URI ثم تتكرر
+     * مع نفس الملف المكتشف عبر MediaStore.
+     */
+    val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "gif", "bmp", "tiff", "avif")
     val PDF_EXTENSIONS = setOf("pdf")
 
     fun extensionOf(name: String): String = name.substringAfterLast('.', "").lowercase(Locale.ROOT)

@@ -39,7 +39,46 @@ object SmartClassifier {
         }
     }
 
-    fun classify(bitmap: Bitmap, facesDetected: Int = 0): List<ClassifiedLabel> {
+    /**
+     * قرار الاستيراد في بوابة المحتوى: هل تبدو الصورة مستندًا (فاتورة/إيصال/
+     * حركة بنكية/لقطة شاشة تطبيق صرافة) بدل صورة عائلية أو منظر طبيعي؟
+     *
+     * الترتيب (يشفّر الملف مرة واحدة فقط ويعيد استخدام الإحصائيات):
+     * 1. وسم طبيعة/سماء → مرفوض (مناظر تُرفض مهما تشابهت مع لقطة شاشة).
+     * 2. وسم مستند أو لقطة شاشة → مقبول **حتى لو وُجد وجه** (هوية/جواز/
+     *    فاتورة باسم شخص — المستند أقوى من الوجه).
+     * 3. وجود وجه → مرفوض (صورة عائلية/شخصية غير مستندية).
+     * 4. غامض → العتبة الفضفاضة على الإحصائيات نفسها.
+     */
+    fun isDocumentLike(file: File, facesDetected: Int): Boolean {
+        val bitmap = decodeSampled(file) ?: return false
+        try {
+            val s = computeStats(bitmap)
+            val labels = classifyFromStats(s, facesDetected).map { it.label }.toSet()
+            if ("طبيعة / حديقة" in labels || "سماء / ماء" in labels) return false
+            if ("مستند / ملف نصي" in labels || "لقطة شاشة" in labels) return true
+            if (facesDetected > 0) return false
+            return s.meanSat < 0.45f && s.edgeMean > 10.0 && (s.maxLum - s.minLum) > 100.0
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /** إحصائيات مُستخرجة من الصورة — تُحسب مرة واحدة وتُشارَك بين كل القواعد. */
+    private data class Stats(
+        val meanLum: Double,
+        val meanSat: Float,
+        val minLum: Double,
+        val maxLum: Double,
+        val greenRatio: Float,
+        val blueRatio: Float,
+        val warmRatio: Float,
+        val chroma: Float,
+        val edgeMean: Double,
+        val strongRate: Double,
+    )
+
+    private fun computeStats(bitmap: Bitmap): Stats {
         val gray = IntArray(bitmap.width * bitmap.height)
         val sat = FloatArray(bitmap.width * bitmap.height)
         val hue = FloatArray(bitmap.width * bitmap.height)
@@ -89,11 +128,9 @@ object SmartClassifier {
         var blueCount = 0
         var greenCount = 0
         var warmCount = 0
-        var saturatedCount = 0
         repeat(n) { idx ->
             val hh = hue[idx]
             if (sat[idx] > 0.15f) {
-                saturatedCount++
                 when {
                     hh in 170f..260f -> blueCount++
                     hh in 70f..160f -> greenCount++
@@ -143,37 +180,56 @@ object SmartClassifier {
             strongRate = strong.toDouble() / (w * h)
         }
 
+        return Stats(
+            meanLum = meanLum,
+            meanSat = meanSat.toFloat(),
+            minLum = minLum,
+            maxLum = maxLum,
+            greenRatio = greenRatio,
+            blueRatio = blueRatio,
+            warmRatio = warmRatio,
+            chroma = chroma.toFloat(),
+            edgeMean = edgeMean,
+            strongRate = strongRate,
+        )
+    }
+
+    fun classify(bitmap: Bitmap, facesDetected: Int = 0): List<ClassifiedLabel> =
+        classifyFromStats(computeStats(bitmap), facesDetected)
+
+    /** قواعد الوسم فوق إحصائيات محسوبة مسبقًا (تُشارَك مع بوابة الاستيراد). */
+    private fun classifyFromStats(s: Stats, facesDetected: Int): List<ClassifiedLabel> {
         val results = mutableListOf<ClassifiedLabel>()
 
         // مخطّط روائي/ملف نصي: مستوى رمادي، حواف كثيفة، تباين واسع — تُقوّى كثافة الحواف القوية الرأي
-        val docScore = if (meanSat < 0.28 && edgeMean > 14.0 && (maxLum - minLum) > 140) {
-            min(0.95f, 0.45f + (edgeMean - 14.0).toFloat() / 80.0f + strongRate.toFloat() * 2.5f)
+        val docScore = if (s.meanSat < 0.28f && s.edgeMean > 14.0 && (s.maxLum - s.minLum) > 140) {
+            min(0.95f, 0.45f + (s.edgeMean - 14.0).toFloat() / 80.0f + s.strongRate.toFloat() * 2.5f)
         } else 0f
         if (docScore >= 0.5f) results += ClassifiedLabel("مستند / ملف نصي", docScore)
 
         // لقطة شاشة: ألوان مسطّحة، حواف ضعيفة، عدد ألوان مميزة صغير، تباين لوني بسيط
-        val screenshotScore = if (edgeMean < 8.0 && meanSat > 0.02f) 0.6f else 0f
+        val screenshotScore = if (s.edgeMean < 8.0 && s.meanSat > 0.02f) 0.6f else 0f
         if (screenshotScore > 0f) results += ClassifiedLabel("لقطة شاشة", screenshotScore)
 
         // طبيعة: نسبة خضرة عالية أو زرقة مع تشبّع جيد
-        if (greenRatio > 0.35f || blueRatio > 0.45f) {
-            val natureScore = min(0.9f, (max(greenRatio, blueRatio) - 0.3f) * 1.5f + 0.3f)
+        if (s.greenRatio > 0.35f || s.blueRatio > 0.45f) {
+            val natureScore = min(0.9f, (max(s.greenRatio, s.blueRatio) - 0.3f) * 1.5f + 0.3f)
             when {
-                greenRatio > blueRatio -> results += ClassifiedLabel("طبيعة / حديقة", natureScore)
+                s.greenRatio > s.blueRatio -> results += ClassifiedLabel("طبيعة / حديقة", natureScore)
                 else -> results += ClassifiedLabel("سماء / ماء", natureScore)
             }
         }
 
         // داخلي دافئ: ألوان دافئة متفشية وتباين سطوح معتدل
-        if (warmRatio > 0.45f && chroma > 0.1f) {
-            results += ClassifiedLabel("داخلي / ضوء دافئ", min(0.75f, warmRatio * 1.2f))
+        if (s.warmRatio > 0.45f && s.chroma > 0.1f) {
+            results += ClassifiedLabel("داخلي / ضوء دافئ", min(0.75f, s.warmRatio * 1.2f))
         }
 
         // أبيض وأسود: تشبّع شبه معدوم على كامل الصورة
-        if (meanSat < 0.04f) results += ClassifiedLabel("أبيض وأسود / تدرج رمادي", 0.75f)
+        if (s.meanSat < 0.04f) results += ClassifiedLabel("أبيض وأسود / تدرج رمادي", 0.75f)
 
         // إضاءة منخفضة: سطوع متوسط منخفض جدًا (صور ليلية)
-        if (meanLum < 60f) results += ClassifiedLabel("إضاءة منخفضة / ليلية", 0.6f)
+        if (s.meanLum < 60.0) results += ClassifiedLabel("إضاءة منخفضة / ليلية", 0.6f)
 
         // وجوه — إشارة قوية من ML Kit إن وُجدت
         if (facesDetected > 0) {

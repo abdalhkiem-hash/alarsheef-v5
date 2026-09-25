@@ -41,6 +41,7 @@ fun SettingsPanelContent(
     val gallery by prefs.sourceGallery.collectAsStateWithLifecycle(initialValue = true)
     val downloads by prefs.sourceDownloads.collectAsStateWithLifecycle(initialValue = true)
     val excludePersonal by prefs.excludePersonalPhotos.collectAsStateWithLifecycle(initialValue = true)
+    val documentsOnly by prefs.documentsOnly.collectAsStateWithLifecycle(initialValue = true)
     val importFolderUri by prefs.importFolderUri.collectAsStateWithLifecycle(initialValue = null)
 
     Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
@@ -63,6 +64,9 @@ fun SettingsPanelContent(
         HorizontalDivider(Modifier.padding(vertical = 10.dp))
         SwitchRow("استثناء الصور الشخصية/العائلية (كشف الوجوه)", excludePersonal) {
             scope.launch { prefs.setExcludePersonalPhotos(it) }
+        }
+        SwitchRow("استيراد المستندات فقط (فواتير/حوالات/حركات — بلا صور عائلية أو مناظر)", documentsOnly) {
+            scope.launch { prefs.setDocumentsOnly(it) }
         }
         Text("الصور تُستورد تلقائيًا عبر MediaStore (بدون اختيار مجلد)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
         Text("مجلدات الوثائق والملفات (SAF — اخترها من منتقي النظام)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
