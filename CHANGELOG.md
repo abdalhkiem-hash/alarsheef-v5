@@ -210,3 +210,22 @@
 - إلغاء التحديد ← FAB «إضافة» يعود أسفل اليسار ✅
 - فحص قوائم FAB الأربع (Home/Month/Day/Files): «إضافة مجلد» غائبة من كل الشاشات (خلف `FeatureFlags`) و«إضافة يوم» تظهر في DayScreen فقط ✅
 
+---
+
+## واتساب أعمال بمفتاح فقط + كشف PDF عبر MediaStore (25/9/2026)
+
+| الملف | التغيير |
+|---|---|
+| `SourceFolders.kt` | صور واتساب أعمال تُسجَّل كمجلدات MediaStore **بمفتاح المصدر فقط** (لا اختيار SAF) — والآن المسارتان الشائعان: الجيل الجديد `Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Images` والجيل القديم `WhatsApp Business/Media/WhatsApp Business Images`. |
+| `FileScannerWorker.kt` | `sourceFromRelativePath` تحوّل كاملة: مطابقة **غير حساسة لحالة الأحرف** وفرع واتساب الأعمال أولًا (يغطي `com.whatsapp.w4b` و`whatsapp business`). **دالة جديدة `scanMediaStorePdfs`**: تستعلم `MediaStore.Files` عن `application/pdf` المضافة اليوم (قبل مرحلة SAF لتسبق هوياتها)، تحوّل الصفحات عبر `PdfToImageConverter`، الهوية `المسار` / `المسار#page=N` + شكل SAF للمسار (`primary:...`) لمنع المعالجة المزدوجة، وتحمل `SecurityException` بتنبيه بدل إسقاط الفحص. إعادة تسمية `copyMediaStoreImageToTemp` → `copyMediaStoreToTemp`. |
+| `SettingsPanels.kt` | تفعيل مفتاح «واتساب أعمال» يشغّل الفحص فورًا (`runOnce`) — النتيجة ظاهرة مباشرة بلا أي خطوة SAF. |
+| `PermissionUtils.kt` + `AndroidManifest.xml` | **إصلاح**: `mediaPermissions` صارت شرطية — `READ_EXTERNAL_STORAGE` على API ≤32 (كان `READ_MEDIA_*` يُرفض هناك ⇒ الفحص كله معطّل على أندرويد 11/12!) و`READ_MEDIA_IMAGES/VIDEO` على 33+؛ المانيفست يضيف `READ_EXTERNAL_STORAGE` بحد أقصى 32. |
+
+### التحقق على الجهاز (Android 14)
+- الفحص بعد التعديل: صور MediaStore تعمل ✓ + `صفوف PDF في MediaStore: 0` بلا خطأ ثم `اكتمل الفحص` ✓
+- تحويل PDF فعلي عبر المسار الكامل: فرع SAF أرشف **6 صفحات** من ملفين PDF في الفحص نفسه ✓
+- واتساب أعمال: صور `w4b` تُكتشف وتُتخطى كـ«أُرشف سابقًا» بمفتاح واحد فقط ✓
+
+### ملاحظة صلاحية صادقة
+- على **أندرويد 13+** لا يغطي `READ_MEDIA_*` ملفات غير الوسائط (PDF) — استعلام `MediaStore.Files` للـPDF يرجع 0 صفوف مهما كان اليوم (سُجّل هذا السلوك في الاختبار). لذلك: على 33+ يظل **SAF** طريق الـPDF الفعلي (مجلدات التنزيلات/الوثائق المعتمدة)، و`scanMediaStorePdfs` يعمل على **أندرويد ≤12** حيث يمنح `READ_EXTERNAL_STORAGE` رؤية PDF كاملة — وبُني ليلتقط تلقائيًا أي تغيّر في سياسة المنصة مستقبلًا.
+

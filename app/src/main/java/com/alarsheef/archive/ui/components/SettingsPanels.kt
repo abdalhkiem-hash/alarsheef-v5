@@ -58,7 +58,12 @@ fun SettingsPanelContent(
         HorizontalDivider(Modifier.padding(vertical = 10.dp))
         Text("مصادر السحب", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
         SwitchRow("واتساب", whatsapp) { scope.launch { prefs.setSourceWhatsapp(it) } }
-        SwitchRow("واتساب أعمال", whatsappBusiness) { scope.launch { prefs.setSourceWhatsappBusiness(it) } }
+        SwitchRow("واتساب أعمال", whatsappBusiness) { enabled ->
+            scope.launch { prefs.setSourceWhatsappBusiness(enabled) }
+            // صور الأعمال تُسحب من MediaStore بمفتاح المصدر فقط (بلا اختيار SAF) —
+            // تشغيل الفحص فورًا يُظهر النتيجة مباشرة عند التفعيل.
+            if (enabled) WorkScheduler.runOnce(context)
+        }
         SwitchRow("الاستديو / المعرض", gallery) { scope.launch { prefs.setSourceGallery(it) } }
         SwitchRow("الملفات / التنزيلات", downloads) { scope.launch { prefs.setSourceDownloads(it) } }
         HorizontalDivider(Modifier.padding(vertical = 10.dp))

@@ -1,4 +1,4 @@
-package com.alarsheef.archive.scanner
+﻿package com.alarsheef.archive.scanner
 
 import android.content.ContentUris
 import android.content.Context
@@ -109,6 +109,10 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
             // فحص MediaStore: كل الصور (المعرض + واتساب + واتساب أعمال + تنزيلات)
             newImagesCount += scanMediaStore(repository, todayStart, excludePersonalPhotos,
                 documentsOnly, folders, existingPaths)
+
+            // فحص MediaStore للـPDF: كشف تلقائي وتحويل الصفحات — قبل SAF
+            // لتسبق هويات المسارات فرع SAF على نفس الملفات
+            newImagesCount += scanMediaStorePdfs(repository, todayStart, folders, existingPaths)
 
             // فحص SAF: الوثائق وملفات PDF فقط (الصور تُعالَج عبر MediaStore أعلاه)
             for (folder in folders) {
@@ -221,7 +225,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     // (بدل نسخة لكشف الوجوه عبر URI وأخرى للاستيراد)
                     val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
                     val temp = try {
-                        copyMediaStoreImageToTemp(uri, displayName)
+                        copyMediaStoreToTemp(uri, displayName)
                     } catch (e: IOException) {
                         Log.w(TAG, "تعذر نسخ $displayName: ${e.message}")
                         continue
@@ -270,25 +274,164 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         }
     }
 
-    private fun sourceFromRelativePath(path: String): SourceApp? = when {
-        path.contains("com.whatsapp.w4b") || path.contains("WhatsApp Business") -> SourceApp.WHATSAPP_BUSINESS
-        path.startsWith("WhatsApp") || path.contains("/com.whatsapp/") -> SourceApp.WHATSAPP
-        path.startsWith("DCIM") -> SourceApp.GALLERY
-        path.startsWith("Pictures") -> SourceApp.GALLERY
-        path.startsWith("Download") -> SourceApp.DOWNLOADS
-        else -> null
+    // ---------- MediaStore (ملفات PDF — كشف تلقائي وتحويل إلى صور) ----------
+
+    /**
+     * يكتشف ملفات **PDF** المضافة منذ بداية اليوم عبر MediaStore مباشرة —
+     * بدون الحاجة لاختيار مجلد SAF — ويحوّل صفحاتها إلى صور عبر
+     * [PdfToImageConverter] ثم يُرشفها.
+     *
+     * هوية الصفحات (لمنع التكرار): الصفحة الأولى تحمل مسار الملف الأصلي
+     * (بوابة المسار) وبقية الصفحات `مسار#page=N`. وتُضاف أيضًا شكل SAF
+     * للمسار (`content://com.android.externalstorage.documents/document/primary%3A...`)
+     * حتى لا يُعالَج نفس الملف مجددًا في مرحلة SAF لاحقًا داخل نفس الفحص.
+     *
+     * ملفات PDF تُعامَل كمستندات: تتجاوز بوابة المحتوى (لا كشف وجوه) —
+     * متسقة مع معالجة فرع SAF.
+     *
+     * على أندرويد 13+ قد تُخفي MediaStore ملفات غير الوسائط عند عدم وجود
+     * صلاحية — يُسجَّل تنبيه وتُترك مجلدات SAF المعتمدة كالطريق الاحتياطي.
+     *
+     * @return عدد الصفحات الجديدة التي تم أرشفتها.
+     */
+    private suspend fun scanMediaStorePdfs(
+        repository: ArchiveRepository,
+        todayStart: Long,
+        folders: List<SourceFolder>,
+        existingPaths: MutableSet<String>,
+    ): Int = withContext(Dispatchers.IO) {
+        val enabledSources = folders.map { it.source }.toSet()
+        if (enabledSources.isEmpty()) return@withContext 0
+
+        val todayStartSeconds = (todayStart / 1000).toString()
+        val projection = arrayOf(
+            MediaStore.Files.FileColumns._ID,
+            MediaStore.Files.FileColumns.DISPLAY_NAME,
+            MediaStore.Files.FileColumns.RELATIVE_PATH,
+            MediaStore.Files.FileColumns.DATE_MODIFIED,
+        )
+        val selection = "${MediaStore.Files.FileColumns.MIME_TYPE} = ? AND " +
+            "${MediaStore.Files.FileColumns.DATE_ADDED} >= ?"
+        val args = arrayOf("application/pdf", todayStartSeconds)
+        val sort = "${MediaStore.Files.FileColumns.DATE_ADDED} DESC"
+        val filesUri = MediaStore.Files.getContentUri("external")
+
+        var count = 0
+        try {
+            applicationContext.contentResolver.query(filesUri, projection, selection, args, sort)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "لا صلاحية لاستعلام PDF عبر MediaStore — يُعتمد على SAF: ${e.message}")
+            return@withContext 0
+        }?.use { cursor ->
+            Log.i(TAG, "صفوف PDF في MediaStore: ${cursor.count}")
+            val idCol = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID)
+            val nameCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
+            val pathCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.RELATIVE_PATH)
+            val modifiedCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATE_MODIFIED)
+            while (cursor.moveToNext()) {
+                currentCoroutineContext().ensureActive()
+                val id = cursor.getLong(idCol)
+                val displayName = cursor.getString(nameCol)
+                val relativePath = cursor.getString(pathCol)
+                Log.i(TAG, "صف PDF MediaStore: id=$id path=$relativePath name=$displayName")
+                if (displayName == null || relativePath == null) continue
+
+                val source = sourceFromRelativePath(relativePath)
+                if (source == null) {
+                    Log.i(TAG, "تخطي PDF (مصدر غير معروف): $relativePath$displayName")
+                    continue
+                }
+                if (source !in enabledSources) {
+                    Log.i(TAG, "تخطي PDF (المصدر غير مفعّل): $displayName")
+                    continue
+                }
+                val originalPath = relativePath.trimEnd('/') + "/" + displayName
+                if (originalPath in existingPaths) {
+                    Log.i(TAG, "تخطي (أُرشف سابقًا): $displayName")
+                    continue
+                }
+                val dateModifiedSec = if (modifiedCol >= 0 && !cursor.isNull(modifiedCol)) cursor.getLong(modifiedCol) else 0L
+
+                val uri = ContentUris.withAppendedId(filesUri, id)
+                val temp = try {
+                    copyMediaStoreToTemp(uri, displayName)
+                } catch (e: IOException) {
+                    Log.w(TAG, "تعذر نسخ PDF $displayName: ${e.message}")
+                    continue
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "رفض الوصول لـ PDF $displayName: ${e.message}")
+                    continue
+                }
+                try {
+                    Log.i(TAG, "معالجة PDF (MediaStore): $displayName")
+                    val pages = PdfToImageConverter.convertToPngPages(applicationContext, temp)
+                    Log.i(TAG, "صفحات PDF $displayName: ${pages.size}")
+                    var pdfCount = 0
+                    pages.forEachIndexed { index, page ->
+                        val pageIdentity = if (index == 0) originalPath else "$originalPath#page=$index"
+                        val result = repository.importFile(
+                            sourceFile = page, sourceApp = source,
+                            deleteSourceAfterImport = true, countDuplicate = false,
+                            originalPath = pageIdentity,
+                            originalDate = dateModifiedSec * 1000,
+                        )
+                        if (result is ImportResult.Added) pdfCount++
+                        page.delete()
+                    }
+                    // مسار التحديد يُضاف حتى لو لم تُضف صفحة (مكرر/فارغ) — لا إعادة محاولة
+                    existingPaths.add(originalPath)
+                    // شكل SAF للمسار نفسه (التخزين الأولي) — يمنع المعالجة
+                    // المزدوجة عند مرور فرع SAF على نفس الملف لاحقًا
+                    existingPaths.add(
+                        "content://com.android.externalstorage.documents/document/" +
+                            Uri.encode("primary:$relativePath$displayName")
+                    )
+                    count += pdfCount
+                    if (pdfCount > 0) Log.i(TAG, "أُرشف PDF: $displayName ($pdfCount صفحة)")
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "رفض الوصول أثناء معالجة PDF $displayName: ${e.message}")
+                } catch (e: IOException) {
+                    Log.w(TAG, "تعذر تحويل PDF $displayName: ${e.message}")
+                } finally {
+                    if (temp.exists()) temp.delete()
+                }
+            }
+        }
+        count
+    }
+
+    /**
+     * تحديد مصدر الملف من مساره النسبي في MediaStore (بدون أي استعلام إضافي).
+     * تُطبَّق على الصور وملفات PDF معًا.
+     *
+     * واتساب الأعمال يشمل المسارات الشائعة كلها — يُفحص **أولًا** حتى لا
+     * يسقط مسار قديم مثل "WhatsApp Business/..." في فرع واتساب العادي:
+     *   - `Android/media/com.whatsapp.w4b/WhatsApp Business/Media/...` (الجيل الجديد)
+     *   - `WhatsApp Business/Media/WhatsApp Business Images/...` (الجذر القديم)
+     * المطابقة غير حساسة لحالة الأحرف (بعض الأجهزة تعيد المسار بأحرف مختلفة).
+     */
+    private fun sourceFromRelativePath(path: String): SourceApp? {
+        val p = path.lowercase()
+        return when {
+            p.contains("com.whatsapp.w4b") || p.contains("whatsapp business") -> SourceApp.WHATSAPP_BUSINESS
+            p.startsWith("whatsapp") || p.contains("/com.whatsapp/") -> SourceApp.WHATSAPP
+            p.startsWith("dcim") -> SourceApp.GALLERY
+            p.startsWith("pictures") -> SourceApp.GALLERY
+            p.startsWith("download") -> SourceApp.DOWNLOADS
+            else -> null
+        }
     }
 
     /**
      * نسخة واحدة من MediaStore للكاش — تحافظ على امتداد الملف الأصلي
      * (لا تُجبر .jpg) حتى يستورد الملف بامتداده الصحيح في الأرشيف.
      */
-    private suspend fun copyMediaStoreImageToTemp(uri: Uri, displayName: String): File = withContext(Dispatchers.IO) {
+    private suspend fun copyMediaStoreToTemp(uri: Uri, displayName: String): File = withContext(Dispatchers.IO) {
         val ext = FileUtils.extensionOf(displayName).ifBlank { "jpg" }
         val temp = File(applicationContext.cacheDir, "media_${System.nanoTime()}.$ext")
         applicationContext.contentResolver.openInputStream(uri)?.use { input ->
             temp.outputStream().use { output -> input.copyTo(output) }
-        } ?: throw IOException("فشل فتح صورة MediaStore")
+        } ?: throw IOException("فشل فتح ملف MediaStore")
         temp
     }
 

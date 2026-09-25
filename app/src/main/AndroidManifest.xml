@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- أندرويد 12L فأقدم: تغطي الصور وملفات PDF في MediaStore (بحد أقصى 32؛
+         على 33+ تستبدلها READ_MEDIA_* ويُعتمد على SAF للـPDF) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.CAMERA" />
 
     <application

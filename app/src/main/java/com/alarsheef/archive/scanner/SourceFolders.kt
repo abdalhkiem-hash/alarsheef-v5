@@ -39,10 +39,15 @@ object SourceFolders {
             }
         }
 
-        // واتساب أعمال: placeholder MediaStore للصور (لا يحتاج SAF) + SAF للوثائق فقط
+        // واتساب أعمال: صور MediaStore تلقائيًا **بمفتاح المصدر فقط** — لا تحتاج
+        // اختيار مجلد SAF (صلاحية READ_MEDIA_IMAGES كافية). يُسجَّل المساران
+        // الشائعين في MediaStore: الجيل الجديد (Android/media/com.whatsapp.w4b)
+        // والجيل القديم (WhatsApp Business في جذر التخزين).
         if (prefs.sourceWhatsappBusiness.first()) {
             list.add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "صور واتساب أعمال",
                 FolderType.MediaStoreRelativePath("Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Images")))
+            list.add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "صور واتساب أعمال (مسار قديم)",
+                FolderType.MediaStoreRelativePath("WhatsApp Business/Media/WhatsApp Business Images")))
             prefs.whatsappBusinessDocumentsTreeUri.first()?.let {
                 list.add(SourceFolder(SourceApp.WHATSAPP_BUSINESS, "وثائق واتساب أعمال", FolderType.Saf(Uri.parse(it))))
             }
