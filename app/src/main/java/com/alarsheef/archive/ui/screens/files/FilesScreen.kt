@@ -229,14 +229,18 @@ fun FilesScreen(
             }
         },
         floatingActionButton = {
-            AddFab(
-                repository = repository,
-                snackbarHostState = snackbarHostState,
-                scope = scope,
-                onAddFolder = { showNewFolderDialog = true },
-                onExportAll = { pendingExportDay = day; exportLauncher.launch("alarsheef-$year-${FileUtils.twoDigits(month)}-${FileUtils.twoDigits(day)}.zip") },
-                onImportZip = { importLauncher.launch(arrayOf("application/zip")) }
-            )
+            // في وضع التحديد يختفي الزر حتى لا يغطي شريط الأزرار السفلي
+            // (مشاركة/نقل/حذف) — زر الحذف كان مختفيًا خلفه في التخطيط RTL.
+            if (!hasSelection) {
+                AddFab(
+                    repository = repository,
+                    snackbarHostState = snackbarHostState,
+                    scope = scope,
+                    onAddFolder = { showNewFolderDialog = true },
+                    onExportAll = { pendingExportDay = day; exportLauncher.launch("alarsheef-$year-${FileUtils.twoDigits(month)}-${FileUtils.twoDigits(day)}.zip") },
+                    onImportZip = { importLauncher.launch(arrayOf("application/zip")) }
+                )
+            }
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
