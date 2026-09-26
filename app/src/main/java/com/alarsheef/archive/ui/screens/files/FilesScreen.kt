@@ -7,7 +7,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -491,9 +495,28 @@ private fun ImageViewer(
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(page) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 5f)
-                            offset = if (scale <= 1f) Offset.Zero else offset + pan
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val pressedCount = event.changes.count { it.pressed }
+                                if (pressedCount == 0) break
+                                val zoomChange = event.calculateZoom()
+                                val panChange = event.calculatePan()
+                                if (pressedCount >= 2) {
+                                    // إصبعان فأكثر: تقريب/تصغير، وتحريك داخل الصورة عند التكبير فقط
+                                    val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+                                    scale = newScale
+                                    offset = if (newScale <= 1f) Offset.Zero else offset + panChange
+                                    if (zoomChange != 1f || panChange != Offset.Zero) {
+                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                    }
+                                } else if (scale > 1f && panChange != Offset.Zero) {
+                                    // مصبع واحد والصورة مكبّرة: تحريك داخلها دون تغيير الصفحة
+                                    offset += panChange
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                }
+                            }
                         }
                     },
                 contentAlignment = Alignment.Center

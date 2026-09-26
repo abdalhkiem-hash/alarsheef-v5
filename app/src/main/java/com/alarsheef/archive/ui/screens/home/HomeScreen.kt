@@ -1,6 +1,7 @@
 package com.alarsheef.archive.ui.screens.home
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -66,6 +67,7 @@ import com.alarsheef.archive.ui.components.AiPanelContent
 import com.alarsheef.archive.ui.components.ArsheefDrawerContent
 import com.alarsheef.archive.ui.components.BackupPanelContent
 import com.alarsheef.archive.ui.components.ConfirmDeleteDialog
+import com.alarsheef.archive.ui.components.ConfirmExitDialog
 import com.alarsheef.archive.ui.components.CustomLabelDialog
 import com.alarsheef.archive.ui.components.DrawerPanel
 import com.alarsheef.archive.ui.components.ExportImportPanelContent
@@ -116,6 +118,16 @@ fun HomeScreen(
     var pendingExport by remember { mutableStateOf<PendingExport?>(null) }
     var pendingTreeTarget by remember { mutableStateOf<String?>(null) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
+    var showExitDialog by remember { mutableStateOf(false) }
+
+    // زر الرجوع في الشاشة الرئيسية: يغلق القوائم المفتوحة أولًا، وإلا يعرض تأكيد الخروج
+    BackHandler {
+        when {
+            activePanel != null -> activePanel = null
+            drawerState.isOpen -> scope.launch { drawerState.close() }
+            else -> showExitDialog = true
+        }
+    }
 
     val labelSuggestions = rememberScopeSuggestions(repository, labelDialogScope)
 
@@ -345,6 +357,16 @@ when (target) {
             message = "هل تريد حذف سنة $year كاملة؟ سيتم حذف كل الأشهر والأيام والملفات بداخلها نهائيًا.",
             onConfirm = { scope.launch { repository.deleteYear(year) } },
             onDismiss = { confirmDeleteYear = null }
+        )
+    }
+
+    if (showExitDialog) {
+        ConfirmExitDialog(
+            onConfirm = {
+                showExitDialog = false
+                (context as? android.app.Activity)?.finishAffinity()
+            },
+            onDismiss = { showExitDialog = false }
         )
     }
 

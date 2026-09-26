@@ -57,6 +57,24 @@ fun ConfirmDeleteDialog(
     )
 }
 
+@Composable
+fun ConfirmExitDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("الخروج من التطبيق") },
+        text = { Text("هل تريد الخروج من الرشيف؟") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("خروج") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    )
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NewFolderDialog(
