@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Gemini السحابي: استدعاءات generateContent عبر HTTPS فقط -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".ArsheefApplication"

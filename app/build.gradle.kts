@@ -1,8 +1,28 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
 }
+
+// ---------- مفتاح Gemini السحابي ----------
+// يُقرأ بالأولوية: local.properties (متجاهل في Git — المكان الآمن)
+// ثم gradle.properties (مُتتبَّع في Git — للاستخدام في CI بقيم بيئة فقط)
+// ثم متغيّر البيئة GEMINI_API_KEY
+val geminiApiKey: String = run {
+    fun loadProps(fileName: String): Properties = Properties().apply {
+        val f = rootProject.file(fileName)
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    (loadProps("local.properties").getProperty("GEMINI_API_KEY")
+        ?: loadProps("gradle.properties").getProperty("GEMINI_API_KEY")
+        ?: System.getenv("GEMINI_API_KEY")
+        ?: "").trim()
+}
+
+val geminiApiKeyLiteral: String =
+    "\"" + geminiApiKey.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "com.alarsheef.archive"
@@ -16,6 +36,9 @@ android {
         versionName = "5.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // مفتاح Gemini يُحقن في BuildConfig ولا يظهر في المستودع (مصدره ملفات محليّة)
+        buildConfigField("String", "GEMINI_API_KEY", geminiApiKeyLiteral)
 
         // تصدير مخططات Room (exportSchema=true) إلى app/schemas لاستخدامها
         // في اختبارات الترحيل (MigrationTestHelper) ومراجعة المخطط يدويًا
@@ -38,6 +61,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"

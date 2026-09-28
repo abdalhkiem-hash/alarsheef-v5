@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import com.alarsheef.archive.data.entities.AiCloudMeta
 import com.alarsheef.archive.data.entities.FaceGroup
 import com.alarsheef.archive.data.entities.FaceGroupMember
 import com.alarsheef.archive.data.entities.ImageLabel
@@ -61,6 +62,20 @@ interface AiDao {
 
     @Query("SELECT * FROM image_labels WHERE imageId = :imageId ORDER BY confidence DESC")
     fun observeLabelsForImage(imageId: Long): Flow<List<ImageLabel>>
+
+    // ---------- نتائج التحليل السحابي (Gemini: وصف + فاتورة) ----------
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCloudMeta(meta: AiCloudMeta)
+
+    @Query("SELECT * FROM ai_cloud_meta WHERE imageId = :imageId")
+    fun observeCloudMeta(imageId: Long): Flow<AiCloudMeta?>
+
+    @Query("SELECT * FROM ai_cloud_meta WHERE imageId = :imageId")
+    suspend fun getCloudMeta(imageId: Long): AiCloudMeta?
+
+    @Query("DELETE FROM ai_cloud_meta WHERE imageId IN (:ids)")
+    suspend fun deleteCloudMetaForImageIds(ids: List<Long>)
 
     // ---------- مجموعات الوجوه ----------
 

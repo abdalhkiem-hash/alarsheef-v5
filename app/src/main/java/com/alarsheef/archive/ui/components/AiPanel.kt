@@ -1,7 +1,8 @@
 package com.alarsheef.archive.ui.components
 
-import android.os.Build
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -28,11 +29,12 @@ import com.alarsheef.archive.work.AiAnalysisScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
+import com.alarsheef.archive.ai.GeminiRepository
 
 /**
  * لوحة "الذكاء الاصطناعي" في القائمة الجانبية:
- * مفاتيح التشغيل للميزات الأربع + حالة العدد المعلق + زر التحليل الفوري
- * + زر إعادة التحليل الكامل + زر فتح مجموعات الوجوه.
+ * مفاتيح التشغيل المحلية الثلاث + قسم Gemini السحابي (تفعيل/نموذج/حالة المفتاح/الحصة اليومية)
+ * + حالة العدد المعلق + زر التحليل الفوري + زر إعادة التحليل الكامل + زر فتح مجموعات الوجوه.
  */
 @Composable
 fun AiPanelContent(
@@ -47,12 +49,19 @@ fun AiPanelContent(
     val facesEnabled by prefs.aiFacesEnabled.collectAsStateWithLifecycle(initialValue = true)
     val pending by repository.observePendingAiCount().collectAsStateWithLifecycle(initialValue = 0)
     val groups by repository.observeFaceGroupRows().collectAsStateWithLifecycle(initialValue = emptyList())
+    val cloudEnabled by prefs.geminiCloudEnabled.collectAsStateWithLifecycle(initialValue = true)
+    val usePro by prefs.geminiUsePro.collectAsStateWithLifecycle(initialValue = false)
+    val quota by prefs.geminiQuota.collectAsStateWithLifecycle(
+        initialValue = com.alarsheef.archive.settings.GeminiQuota(0, GeminiRepository.DAILY_LIMIT)
+    )
     val ocrAvailable = remember { OcrEngine.isAvailable(context) }
+    val keyConfigured = remember { GeminiRepository.isConfigured() }
 
-    Column(Modifier.padding(20.dp)) {
+    Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
         Text("الذكاء الاصطناعي", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
         Text(
-            "كل التحليل يعمل على جهازك بالكامل دون إنترنت ولا رفع لأي صورة.",
+            "فحص محلي سريع أولًا دون إنترنت، ومعه Gemini السحابي عند الحاجة فقط " +
+                "للصور الغامضة واستخراج الفواتير ودقة النص العربي.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
@@ -65,17 +74,55 @@ fun AiPanelContent(
 
         if (!ocrAvailable) {
             Text(
-                "تنبيه: هذه النسخة من Android (± 13) لا توفر نموذج النص على الجهاز — سيُتخطى OCR بهدوء.",
+                if (keyConfigured && cloudEnabled)
+                    "تنبيه: لا نموذج نص على هذا الجهاز (Android 13-) — سيُعتمد النص السحابي العربي."
+                else
+                    "تنبيه: لا نموذج نص على هذا الجهاز (Android 13-) — يُتخطى OCR إلا بتفعيل Gemini السحابي.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 6.dp)
             )
-        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+        Text(
+            "Gemini السحابي",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        SwitchRow2("تفعيل التحليل السحابي (وصف وفواتير وOCR)", cloudEnabled) {
+            scope.launch { prefs.setGeminiCloudEnabled(it) }
+        }
+
+        if (cloudEnabled) {
+            SwitchRow2("استخدام نموذج 2.5-pro بدل flash الأرخص", usePro) {
+                scope.launch { prefs.setGeminiUsePro(it) }
+            }
             Text(
-                "التعرف على النصوص يتطلب Android 13 أو أحدث.",
+                if (keyConfigured)
+                    "المفتاح مضبوط ✓ (يُقرأ من local.properties وقت البناء)"
+                else
+                    "المفتاح غير مضبوط — أنشئه من aistudio.google.com/apikey وضعه في local.properties باسم GEMINI_API_KEY ثم أعد البناء.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                color = if (keyConfigured) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 6.dp)
+            )
+            quota.let { q ->
+                Text(
+                    "استهلاك اليوم: ${q.used} من ${q.limit} استدعاء (يصفَّر كل يوم)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            Text(
+                "تُستدعى السحابة للصور الغامضة أو الثقة المنخفضة والمستندات فقط، " +
+                    "ومحاولة واحدة لكل استدعاء لحماية حدك اليومي.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
 

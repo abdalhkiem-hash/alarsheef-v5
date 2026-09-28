@@ -57,3 +57,21 @@ data class FaceGroupMember(
     val descriptorHash: String,
     val cropPath: String
 )
+
+/**
+ * نتائج التحليل السحابي (Gemini) لكل صورة: وصف عربي + بيانات فاتورة اختيارية.
+ * تُملأ فقط عندما يستدعي النظام المسح السحابي (صورة غامضة أو مستند يستحق وصفًا)؛
+ * الصور المحلَّلة محليًا بالكامل لا تحمل صفًا هنا. imageId PK = صورة واحدة لكل صف.
+ */
+@Entity(tableName = "ai_cloud_meta")
+data class AiCloudMeta(
+    @PrimaryKey val imageId: Long,
+    val description: String,
+    val vendor: String?,
+    val invoiceDate: String?,
+    val amount: String?,
+    val currency: String?,
+    val details: String?,
+    val model: String,
+    val analyzedAt: Long
+)

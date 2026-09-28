@@ -76,6 +76,10 @@ interface ArchivedImageDao {
            WHERE fileName LIKE '%' || :query || '%'
               OR id IN (SELECT imageId FROM ocr_texts WHERE text LIKE '%' || :query || '%')
               OR id IN (SELECT imageId FROM image_labels WHERE label LIKE '%' || :query || '%')
+              OR id IN (SELECT imageId FROM ai_cloud_meta
+                        WHERE description LIKE '%' || :query || '%'
+                           OR vendor LIKE '%' || :query || '%'
+                           OR details LIKE '%' || :query || '%')
               OR id IN (
                   SELECT imageId FROM face_group_members
                   WHERE groupKey IN (SELECT groupKey FROM face_groups

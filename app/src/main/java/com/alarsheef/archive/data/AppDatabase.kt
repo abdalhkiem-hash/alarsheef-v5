@@ -13,6 +13,7 @@ import com.alarsheef.archive.data.dao.ArchivedImageDao
 import com.alarsheef.archive.data.dao.CustomLabelDao
 import com.alarsheef.archive.data.dao.DayGroupDao
 import com.alarsheef.archive.data.dao.SubFolderDao
+import com.alarsheef.archive.data.entities.AiCloudMeta
 import com.alarsheef.archive.data.entities.ArchivedImage
 import com.alarsheef.archive.data.entities.CustomLabel
 import com.alarsheef.archive.data.entities.DayGroup
@@ -42,9 +43,10 @@ class Converters {
         FaceGroup::class,
         FaceGroupMember::class,
         SubFolder::class,
-        DayGroup::class
+        DayGroup::class,
+        AiCloudMeta::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -190,6 +192,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** ترقية 7→8: جدول نتائج التحليل السحابي (Gemini: وصف + فاتورة) — جدول جديد فقط */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS ai_cloud_meta (" +
+                        "imageId INTEGER NOT NULL PRIMARY KEY, " +
+                        "description TEXT NOT NULL, " +
+                        "vendor TEXT, " +
+                        "invoiceDate TEXT, " +
+                        "amount TEXT, " +
+                        "currency TEXT, " +
+                        "details TEXT, " +
+                        "model TEXT NOT NULL, " +
+                        "analyzedAt INTEGER NOT NULL)"
+                )
+            }
+        }
+
         @Volatile private var INSTANCE: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase =
@@ -198,7 +218,10 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "arsheef.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                ).addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
+                    MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                )
                     .build()
                     .also { INSTANCE = it }
             }

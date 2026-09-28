@@ -5,8 +5,13 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.alarsheef.archive.ai.GeminiRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.time.LocalDate
+
+/** استهلاك الحصة السحابية اليومية (لعرضها في الإعدادات). */
+data class GeminiQuota(val used: Long, val limit: Int)
 
 class SettingsPreferences(private val context: Context) {
 
@@ -28,6 +33,14 @@ class SettingsPreferences(private val context: Context) {
         val AI_OCR_ENABLED = booleanPreferencesKey("ai_ocr_enabled")
         val AI_LABELS_ENABLED = booleanPreferencesKey("ai_labels_enabled")
         val AI_FACES_ENABLED = booleanPreferencesKey("ai_faces_enabled")
+        /** تفعيل التحليل السحابي (Gemini) — يُشغَّل فقط عند وجود مفتاح. */
+        val GEMINI_CLOUD_ENABLED = booleanPreferencesKey("gemini_cloud_enabled")
+        /** اختيار نموذج 2.5-pro بدل 2.5-flash (الأخير أرخص وأسرع). */
+        val GEMINI_USE_PRO = booleanPreferencesKey("gemini_use_pro")
+        /** تاريخ الحصة الحالية (يُعاد ضبطها كل يوم). */
+        val GEMINI_QUOTA_DATE = stringPreferencesKey("gemini_quota_date")
+        /** عدد الاستدعاءات السحابية المستهلكة اليوم. */
+        val GEMINI_QUOTA_USED = longPreferencesKey("gemini_quota_used")
         /** معرّف شجرة SAF لمجلد صور واتساب (يختاره المستخدم). */
         val WHATSAPP_IMAGES_TREE_URI = stringPreferencesKey("whatsapp_images_tree_uri")
         /** معرّف شجرة SAF لمجلد وثائق واتساب. */
@@ -56,6 +69,16 @@ class SettingsPreferences(private val context: Context) {
     val aiOcrEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.AI_OCR_ENABLED] ?: true }
     val aiLabelsEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.AI_LABELS_ENABLED] ?: true }
     val aiFacesEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.AI_FACES_ENABLED] ?: true }
+    /** افتراضيًا مفعّل: يُفعَّل فعليًا فقط عند وجود المفتاح والوصول لِـ WiFi. */
+    val geminiCloudEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.GEMINI_CLOUD_ENABLED] ?: true }
+    /** الافتراضي flash (الأرخص)؛ pro اختياري عبر مفتاح تبديل في الإعدادات. */
+    val geminiUsePro: Flow<Boolean> = context.appDataStore.data.map { it[Keys.GEMINI_USE_PRO] ?: false }
+    /** استهلاك اليوم الحالي من الاستدعاءات السحابية (يصفَّر تلقائيًا يوميًا). */
+    val geminiQuota: Flow<GeminiQuota> = context.appDataStore.data.map { prefs ->
+        val today = LocalDate.now().toString()
+        val used = if (prefs[Keys.GEMINI_QUOTA_DATE] == today) prefs[Keys.GEMINI_QUOTA_USED] ?: 0L else 0L
+        GeminiQuota(used = used, limit = GeminiRepository.DAILY_LIMIT)
+    }
     /** معرّف شجرة SAF لصور واتساب (null إذا لم يُختار بعد). */
     val whatsappImagesTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.WHATSAPP_IMAGES_TREE_URI] }
     /** معرّف شجرة SAF لوثائق واتساب. */
@@ -87,6 +110,29 @@ class SettingsPreferences(private val context: Context) {
     suspend fun setAiOcrEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_OCR_ENABLED] = v } }
     suspend fun setAiLabelsEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_LABELS_ENABLED] = v } }
     suspend fun setAiFacesEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_FACES_ENABLED] = v } }
+    suspend fun setGeminiCloudEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.GEMINI_CLOUD_ENABLED] = v } }
+    suspend fun setGeminiUsePro(v: Boolean) { context.appDataStore.edit { it[Keys.GEMINI_USE_PRO] = v } }
+
+    /**
+     * يحجز محاولة واحدة من الحصة اليومية قبل أي استدعاء سحابي.
+     * @return true إذا استُهلكت المحاولة، false إذا انتهى حد اليوم (يُحترم بلا استثناء).
+     */
+    suspend fun tryConsumeGeminiQuota(limit: Int): Boolean {
+        val today = LocalDate.now().toString()
+        var allowed = false
+        context.appDataStore.edit { prefs ->
+            if (prefs[Keys.GEMINI_QUOTA_DATE] != today) {
+                prefs[Keys.GEMINI_QUOTA_DATE] = today
+                prefs[Keys.GEMINI_QUOTA_USED] = 0L
+            }
+            val used = prefs[Keys.GEMINI_QUOTA_USED] ?: 0L
+            if (used < limit) {
+                prefs[Keys.GEMINI_QUOTA_USED] = used + 1
+                allowed = true
+            }
+        }
+        return allowed
+    }
     suspend fun setWhatsappImagesTreeUri(v: String?) {
         context.appDataStore.edit { if (v == null) it.remove(Keys.WHATSAPP_IMAGES_TREE_URI) else it[Keys.WHATSAPP_IMAGES_TREE_URI] = v }
     }

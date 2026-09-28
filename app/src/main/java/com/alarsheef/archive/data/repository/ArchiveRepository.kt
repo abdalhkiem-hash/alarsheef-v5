@@ -145,6 +145,7 @@ class ArchiveRepository(context: Context) {
             aiDao.deleteOcrForImageIds(chunk)
             aiDao.deleteLabelsForImageIds(chunk)
             aiDao.deleteMembersForImageIds(chunk)
+            aiDao.deleteCloudMetaForImageIds(chunk)
         }
     }
 
@@ -445,6 +446,28 @@ class ArchiveRepository(context: Context) {
         val now = System.currentTimeMillis()
         aiDao.insertLabels(labels.map { com.alarsheef.archive.data.entities.ImageLabel(imageId = imageId, label = it.label, confidence = it.confidence, createdAt = now) })
     }
+
+    fun observeCloudMeta(imageId: Long) = aiDao.observeCloudMeta(imageId)
+
+    /** يحفظ نتائج التصنيف السحابي (وصف + فاتورة) لصورة — يستبدل أي نتيجة سابقة. */
+    suspend fun saveCloudMeta(
+        imageId: Long,
+        description: String,
+        invoice: com.alarsheef.archive.ai.InvoiceInfo?,
+        model: String
+    ) = aiDao.upsertCloudMeta(
+        com.alarsheef.archive.data.entities.AiCloudMeta(
+            imageId = imageId,
+            description = description,
+            vendor = invoice?.vendor,
+            invoiceDate = invoice?.date,
+            amount = invoice?.amount,
+            currency = invoice?.currency,
+            details = invoice?.details,
+            model = model,
+            analyzedAt = System.currentTimeMillis()
+        )
+    )
 
     suspend fun upsertFaceGroup(groupKey: String, name: String?) =
         aiDao.insertFaceGroup(com.alarsheef.archive.data.entities.FaceGroup(groupKey, name))

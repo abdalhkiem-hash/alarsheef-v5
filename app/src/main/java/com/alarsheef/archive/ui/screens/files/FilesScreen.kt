@@ -592,6 +592,44 @@ private fun ImageViewer(
                         modifier = Modifier.padding(top = 8.dp, start = 24.dp, end = 24.dp)
                     )
                 }
+
+                // نتائج Gemini السحابية: وصف عربي + بيانات الفاتورة إن وُجدت
+                val cloud by repository.observeCloudMeta(current.id)
+                    .collectAsStateWithLifecycle(initialValue = null)
+                val cloudMeta = cloud
+                if (cloudMeta != null) {
+                    if (cloudMeta.description.isNotBlank()) {
+                        Text(
+                            cloudMeta.description,
+                            color = Color.White.copy(alpha = 0.78f),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            modifier = Modifier.padding(top = 6.dp, start = 24.dp, end = 24.dp)
+                        )
+                    }
+                    val invoiceBits = buildList {
+                        cloudMeta.vendor?.takeIf(String::isNotBlank)?.let { add(it) }
+                        cloudMeta.amount?.takeIf(String::isNotBlank)?.let { amount ->
+                            add(cloudMeta.currency?.takeIf(String::isNotBlank)?.let { "$amount $it" } ?: amount)
+                        }
+                        cloudMeta.invoiceDate?.takeIf(String::isNotBlank)?.let { add(it) }
+                    }
+                    if (invoiceBits.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 6.dp)
+                                .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(50))
+                                .padding(horizontal = 10.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                "فاتورة: " + invoiceBits.joinToString(" · "),
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
             }
         }
     }
