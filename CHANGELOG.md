@@ -245,3 +245,42 @@
 - العارض: سحب من المنتصف ينتقل للصورة التالية/السابقة ويبقى على الصفحة بعد الإفلات ✓ (تُحقّق من تغيّر الاسم أسفل الشاشة 11→12→13→12 بالترتيب)
 - ملاحظة سلوك جهاز: السحب الذي **يبدأ من الحافة اليسرى** (~115dp) يستولي عليه نطاق رجوع النظام فيستعيد الصفحة الأصلية — سلوك المنصة وتشمل كل التطبيقات؛ الحافة اليمنى والمنتصف تعملان طبيعيًا.
 
+---
+
+## تكامل Gemini السحابي — تصنيف ووصف وفواتير وOCR عربي (27/9/2026)
+
+نظام **هجين**: فحص محلي سريع أولًا (بدون إنترنت) + استدعاء Gemini عند الحاجة فقط لحماية الحد اليومي.
+
+| الملف | التغيير |
+|---|---|
+| `app/build.gradle.kts` | تحميل `GEMINI_API_KEY` بالأولوية: `local.properties` (متجاهل في Git) ← `gradle.properties` ← متغيّر البيئة، ثم `buildConfigField("String", "GEMINI_API_KEY", ...)` + `buildFeatures.buildConfig = true`. |
+| `local.properties` | سطر `GEMINI_API_KEY=` فارغ بانتظار المفتاح (الملف متجاهل في Git أصلًا — لا يُرفع المفتاح أبدًا). |
+| `AndroidManifest.xml` | صلاحية `INTERNET` (لـHTTPS فقط). |
+| `GeminiRepository.kt` (جديد) | عميل REST v1beta بـ`HttpURLConnection` **بلا أي مكتبة خارجية**: ترويسة `x-goog-api-key` (لا تُطبع)، نماذج `gemini-2.5-flash` (افتراضي) و`gemini-2.5-pro` (اختياري)، تصغير الصورة إلى ≤1024px (1600 للOCR) → JPEG → base64، `suspend + Dispatchers.IO`، **أي فشل (شبكة/429/مفتاح/استجابة) يرجع `null` بهدوء** فلا يسقط المسح. يضمّ `extractText` لـOCR عربي حرفي. سقف `DAILY_LIMIT = 50`. |
+| `GeminiClassifier.kt` (جديد) | تصنيف سحابي بمخطط `responseSchema` JSON منظّم: `labels[]` عربية + `description` + `invoice{vendor,date,amount,currency,details}` — مع `parse()` دفاعي (`runCatching`) ورفض الحقول الفارغة/"null". |
+| `AiEntities.kt` | كيان جديد `AiCloudMeta(imageId PK, description, vendor, invoiceDate, amount, currency, details, model, analyzedAt)` — صف واحد لكل صورة سُحبت نتائجها. |
+| `AppDatabase.kt` | الإصدار **7 ← 8** + `MIGRATION_7_8` (جدول جديد فقط — لا تعبئة بيانات). |
+| `AiDao.kt` | `upsertCloudMeta` / `observeCloudMeta` / `getCloudMeta` / `deleteCloudMetaForImageIds`. |
+| `ArchiveRepository.kt` | `saveCloudMeta` (وصف + فاتورة) + `observeCloudMeta`؛ وحذف الصفوف السحابية في `cleanupAiRowsForImages`. |
+| `ArchivedImageDao.kt` | `searchAll` يبحث الآن أيضًا في `ai_cloud_meta` (الوصف/الجهة/البنود) — البحث يشمل الوصف والفاتورة. |
+| `SettingsPreferences.kt` | مفتاحا `geminiCloudEnabled` (افتراضي مفعّل) و`geminiUsePro` (افتراضي flash) + **حصة يومية**: `tryConsumeGeminiQuota(50)` تحجز محاولة قبل كل استدعاء وتتصفَّر كل يوم + `geminiQuota` للعرض. |
+| `AiAnalysisWorker.kt` | **السياسة الهجينة**: التصنيف المحلي أولًا؛ سحابي فقط إذا كانت الصورة بلا وسوم/ثقة < 0.6 أو مستند/لقطة شاشة (لتوليد الوصف والفاتورة)، مع دمج وسوم ML Kit للوجوه مع نتيجة السحابة. OCR: نص محلي ≥20 حرفًا يكفي؛ وإلا سحابي (يغطي أندرويد < 13 أو غياب النموذج)؛ وأخيرًا احتياطي بالنص المحلي. الحصة/المفتاح/الخطأ ⇒ عودة صامتة للمحلّي. |
+| `AiPanel.kt` | قسم «Gemini السحابي»: مفتاح التفعيل + مفتاح flash/pro + **حالة المفتاح** (مضبوط ✓ / غير مضبوط مع رابط AI Studio) + عداد «استهلاك اليوم: x من 50» + شرح سياسة الحفاظ على الحد اليومي؛ وتحديث نصوص تنبيه OCR لجاهزية البديل السحابي. **إصلاح**: إضافة `verticalScroll` لأن اللوحة أصبحت أطول من الـModalBottomSheet (كان أزرار إعادة التحليل والوجوه خارج الشاشة بلا تمرير). |
+| `FilesScreen.kt` | العارض يعرض أسفل الصورة: وصف عربي من Gemini + شارة «فاتورة: الجهة · المبلغ · التاريخ» إن وُجدت. |
+| `CHANGELOG.md` | هذا السجل. |
+
+### التهيئة (شرط تشغيل السحابة)
+1. أنشئ مفتاحًا مجانيًا من `https://aistudio.google.com/apikey`.
+2. ضعه في `local.properties`: `GEMINI_API_KEY=AIza...` (الملف متجاهل في Git).
+3. أعد بناء التطبيق — بلا مفتاح يعمل التطبيق كاملًا محليًا كما كان (السحابة متوقفة بهدوء).
+
+### التحقق على الجهاز (Galaxy S22 Ultra، Android 14)
+- `assembleDebug` = **BUILD SUCCESSFUL** ✅ (3 بناءات: بدون مفتاح، بمفتاح تجريبي، النهائي)
+- ترقية قاعدة بيانات حقيقية **7 → 8** على جهاز به DB v7 قائم: التطبيق أُطلق بلا crash ولا فقدان ✅
+- لوحة الذكاء الاصطناعي: قسم «Gemini السحابي» + «المفتاح غير مضبوط» (بناء بلا مفتاح) ⇐ «المفتاح مضبوط ✓» (بناء بالمفتاح) ✓ + عداد «استهلاك اليوم: 0 من 50 استدعاء» ✓
+- **مسار الخطأ الحقيقي**: بمفتاح غير صالح — استدعاء فعلي إلى `generativelanguage.googleapis.com` ⇐ رد `400 API_KEY_INVALID` سُجّل تحذيرًا و**كُتل بصمت** ⇐ عودة للتحليل المحلي ⇐ **صفر `FATAL EXCEPTION`** وانتهى الـWorker بـ`SUCCESS` ✅
+- **الحد اليومي**: بعد 50 محاولة توقّف النداء السحابي تمامًا وعرض «50 من 50» ثم تحلّل الباقي محليًا ✅
+- لوحة تمرير عمودي الآن: زرا «إعادة تحليل كل الأرشيف» و«مجموعات الوجوه» أصبحا قابلين للوصول ✓
+- بدون مفتاح: لا يُجرى أي اتصال شبكة إطلاقًا (`isConfigured = false` ⇒ null قبل أي نداء) ✅
+
+
