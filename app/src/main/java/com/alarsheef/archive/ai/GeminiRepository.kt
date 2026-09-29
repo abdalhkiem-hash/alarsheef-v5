@@ -28,14 +28,27 @@ object GeminiRepository {
 
     private const val TAG = "GeminiRepository"
 
-    /** نموذج سريع ورخيص — الافتراضي لتقليل استهلاك الحد اليومي. */
-    const val MODEL_FLASH = "gemini-2.5-flash"
+    /** نموذج سريع ورخيص — الافتراضي لتقليل استهلاك الحد اليومي. (2.5-flash موقوف لحسابات جديدة فحُدِّث لـ3.5) */
+    const val MODEL_FLASH = "gemini-3.5-flash"
 
-    /** نموذج أقوى (اختياري عبر الإعدادات) للصور الصعبة. */
-    const val MODEL_PRO = "gemini-2.5-pro"
+    /** نموذج أقوى (اختياري عبر الإعدادات) — 2.5-pro موقوف لحسابات جديدة فحُدِّث لاقتراح الـAPI. */
+    const val MODEL_PRO = "gemini-3.1-pro-preview"
 
     /** سقف محاولات سحابية يومية يُحترم قبل أي استدعاء. */
     const val DAILY_LIMIT = 50
+
+    /**
+     * true بعد أول استجابة 429 — تجاوز حدّ Google الفوري (RPM/يومي).
+     * يقرأه العامل كي يتوقّف عن استهلاك حصّته اليومية على نداءات مصيرها الفشل.
+     */
+    @Volatile
+    var rateLimited: Boolean = false
+        private set
+
+    /** يُستدعى في بداية كل دفعة تحليل. */
+    fun resetRateLimit() {
+        rateLimited = false
+    }
 
     private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
     private const val CONNECT_TIMEOUT_MS = 20_000
@@ -99,7 +112,8 @@ object GeminiRepository {
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 if (code !in 200..299) {
-                    // 429 = تجاوز حد اليوم، 400/403 = مفتاح أو طلب خاطئ — كلها تُعامل بصمت
+                    // 429 = تجاوز حدّ Google — نوقف كل النداءات اللاحقة في هذه الدفعة
+                    if (code == 429) rateLimited = true
                     Log.w(TAG, "HTTP $code من Gemini: ${response.take(300)}")
                     return@withContext null
                 }

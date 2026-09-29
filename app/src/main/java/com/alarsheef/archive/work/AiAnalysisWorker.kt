@@ -65,6 +65,7 @@ class AiAnalysisWorker(
         val usePro = prefs.geminiUsePro.first()
         // جاهزية السحابة: المفتاح موجود فعليًا + التفعيل مضمّن — وإلا فحص محلي فقط
         val cloudReady = prefs.geminiCloudEnabled.first() && GeminiRepository.isConfigured()
+        GeminiRepository.resetRateLimit()
         if (!ocrEnabled && !labelsEnabled && !facesEnabled) return Result.success()
 
         /** يحجز محاولة واحدة من الحصة اليومية (false = نفد الحد اليومي). */
@@ -116,7 +117,9 @@ class AiAnalysisWorker(
                 if (labelsEnabled) {
                     val local = SmartClassifier.classifyFile(file, faces.size)
                     var final = local
-                    if (cloudReady && needsCloudClassification(local) && consumeQuota()) {
+                    if (cloudReady && !GeminiRepository.rateLimited &&
+                        needsCloudClassification(local) && consumeQuota()
+                    ) {
                         GeminiClassifier.classify(file, usePro)?.let { result ->
                             cloudCalls++
                             // وسوم الوجوه المحلية تُدمج مع نتيجة السحابة (لا نفقدها)
@@ -145,7 +148,7 @@ class AiAnalysisWorker(
                     if (localAdequate) {
                         repository.saveOcrText(image.id, localText!!)
                         saved = true
-                    } else if (cloudReady && consumeQuota()) {
+                    } else if (cloudReady && !GeminiRepository.rateLimited && consumeQuota()) {
                         GeminiRepository.extractText(file, usePro)?.let { cloudText ->
                             if (cloudText.isNotBlank() && cloudText != "لا يوجد نص") {
                                 repository.saveOcrText(image.id, cloudText)
