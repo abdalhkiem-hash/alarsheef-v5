@@ -203,32 +203,32 @@ fun FilesScreen(
                     title = { Text("${selected.size} محدد") },
                     navigationIcon = {
                         IconButton(onClick = { selected = emptySet() }) {
-                            Icon(Icons.Filled.Close, contentDescription = "إلغاء التحديد", tint = Color.White)
+                            Icon(Icons.Filled.Close, contentDescription = "إلغاء التحديد")
                         }
                     },
                     actions = {
                         IconButton(onClick = {
                             selected = if (selected.size == filtered.size) emptySet() else filtered.map { it.id }.toSet()
                         }) {
-                            Icon(Icons.Filled.Check, contentDescription = "تحديد الكل", tint = Color.White)
+                            Icon(Icons.Filled.Check, contentDescription = "تحديد الكل")
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Teal, titleContentColor = Color.White)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
                 )
             } else {
                 TopAppBar(
                     title = { Text(String.format(Locale.ROOT, "%02d %s %d", day, FileUtils.monthArabicName(month), year)) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع", tint = Color.White)
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
                         }
                     },
                     actions = {
                         IconButton(onClick = { shareScope() }) {
-                            Icon(Icons.Filled.Share, contentDescription = "مشاركة", tint = Color.White)
+                            Icon(Icons.Filled.Share, contentDescription = "مشاركة")
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Teal, titleContentColor = Color.White)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
                 )
             }
         },
@@ -387,7 +387,7 @@ private fun FileRow(
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {

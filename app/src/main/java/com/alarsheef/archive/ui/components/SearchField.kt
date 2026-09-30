@@ -1,6 +1,7 @@
 package com.alarsheef.archive.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,11 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
-import com.alarsheef.archive.ui.theme.TealLight
 
 /**
  * حقل البحث الموحّد المستخدم في كل الشاشات — مكوّن واحد قابل لإعادة الاستخدام
  * بدل تكرار نفس الكود في كل شاشة على حدة (متطلب هندسي من المواصفات).
+ * تنسيق عصري: حبة بيضاء (pill) بخيط شعري ومدخل رمادي هادئ.
  */
 @Composable
 fun SearchField(
@@ -37,18 +38,27 @@ fun SearchField(
         onValueChange = onQueryChange,
         modifier = modifier
             .fillMaxWidth()
-            .padding(16.dp, 12.dp, 16.dp, 4.dp)
-            .background(TealLight, RoundedCornerShape(12.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(50))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(50))
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .padding(14.dp, 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         singleLine = true,
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.primary),
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
         decorationBox = { inner ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Box(Modifier.padding(start = 10.dp)) {
                     if (query.isEmpty()) {
-                        Text(placeholder, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                        Text(
+                            placeholder,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     inner()
                 }
