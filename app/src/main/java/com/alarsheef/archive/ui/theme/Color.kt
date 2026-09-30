@@ -18,13 +18,13 @@ val GradientStart = Color(0xFF0F766E)
 val GradientMid = Color(0xFF12A5A0)
 val GradientEnd = Color(0xFF4F46E5)
 val GlowCyan = Color(0xFF2DD4BF)
-val GlowIndigo = Color(0xFF6366F1)
+val GlowIndigo = Color(0xFF8B5CF6)
 
-// زجاج: أسطح شفافة + خيوط بيضاء شعرية + نصوص بيضاء
-val Glass = Color(0x26FFFFFF)      // 15% — بطاقة/سطح أساسي
-val GlassStrong = Color(0x38FFFFFF) // 22% — بلاطات أيقونات وطبقات بارزة
-val GlassBorder = Color(0x4DFFFFFF) // 30% — خيط شعري حدّي
-val GlassSheet = Color(0x54FFFFFF)  // 33% — ألواح منزلقة (قراءة أوضح فوق المحتوى)
+// زجاج: أسطح شفافة + خيوط بيضاء شعرية + نصوص بيضاء (كثافات مطابقة للمعاينة B)
+val Glass = Color(0x3DFFFFFF)      // 24% — بطاقة/سطح أساسي (حليبي مثل المعاينة)
+val GlassStrong = Color(0x4DFFFFFF) // 30% — بلاطات أيقونات وشرائح علوية
+val GlassBorder = Color(0x59FFFFFF) // 35% — خيط شعري حدّي
+val GlassSheet = Color(0x66FFFFFF)  // 40% — ألواح منزلقة (قراءة أوضح فوق المحتوى)
 val AppBackground = Color.Transparent
 val Surface = Glass
 val TextPrimary = Color(0xFFFFFFFF)

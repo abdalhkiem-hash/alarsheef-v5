@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -250,16 +251,22 @@ when (target) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
-                TopAppBar(
+                CenterAlignedTopAppBar(
                     title = { Text("الأرشيف") },
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        IconButton(
+                            onClick = { scope.launch { drawerState.open() } },
+                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
+                        ) {
                             Icon(Icons.Filled.Menu, contentDescription = "القائمة")
                         }
                     },
                     actions = {
                         // لا يفتح صفحة منفصلة — يركز حقل البحث الظاهر أسفل الشريط
-                        IconButton(onClick = { searchFieldFocus.requestFocus() }) {
+                        IconButton(
+                            onClick = { searchFieldFocus.requestFocus() },
+                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
+                        ) {
                             Icon(Icons.Filled.Search, contentDescription = "بحث")
                         }
                     },
@@ -426,7 +433,7 @@ private fun YearRowCard(
                 }
             }
             Column(modifier = Modifier.padding(start = 4.dp).weight(1f)) {
-                Text(row.label ?: "${row.year}", style = MaterialTheme.typography.titleMedium)
+                Text(row.label ?: "${row.year}", style = MaterialTheme.typography.headlineMedium)
                 val subtitle = if (row.label != null) {
                     "${row.year} · ${row.fileCount} ملف"
                 } else {

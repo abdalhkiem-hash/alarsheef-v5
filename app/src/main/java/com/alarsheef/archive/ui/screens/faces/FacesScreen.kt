@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +53,7 @@ import com.alarsheef.archive.data.dao.FaceMemberRow
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.ui.theme.Amber
 import com.alarsheef.archive.ui.theme.GlassBorder
+import com.alarsheef.archive.ui.theme.GlassStrong
 import com.alarsheef.archive.ui.theme.Mint
 import kotlinx.coroutines.launch
 import java.io.File
@@ -136,10 +138,13 @@ private fun GroupsList(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = { Text("مجموعات الوجوه") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
                     }
                 },
@@ -213,10 +218,13 @@ private fun MembersList(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = { Text(members.size.coerceAtLeast(1).let { "المجموعة ($it صورة)" }) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
                     }
                 },

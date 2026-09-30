@@ -62,8 +62,13 @@ fun ArsheefRoot(repository: ArchiveRepository) {
     val onboardingDone by prefs.onboardingDone.collectAsStateWithLifecycle(initialValue = null)
 
     // خلفية زجاجية متدرّجة مشتركة لكل الشاشات (نمط B) + كرات ضوئية ناعمة
+    // تدرّج بزوايا معاينة B: تركوازي داكن أعلى → سماوي عند38% → نيلي/بنفسجي أسفل
     val gradient = remember {
-        Brush.verticalGradient(listOf(GradientStart, GradientMid, GradientEnd))
+        Brush.verticalGradient(
+            0f to GradientStart,
+            0.38f to GradientMid,
+            1f to GradientEnd
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize().background(gradient)) {
@@ -82,9 +87,10 @@ fun ArsheefRoot(repository: ArchiveRepository) {
             }
             val w = size.width
             val h = size.height
-            glow(GlowCyan, w * 0.95f, h * 0.03f, w * 0.75f, 0.40f)
-            glow(GlowIndigo, w * 1.05f, h * 0.86f, w * 0.85f, 0.55f)
-            glow(Amber, -w * 0.18f, h * 0.70f, w * 0.60f, 0.14f)
+            // مواضع الكرات كما في معاينة B: تركوازي أعلى اليسار، بنفسجي أسفل اليمين، كهرماني يسار الوسط
+            glow(GlowCyan, w * 0.10f, h * 0.04f, w * 0.85f, 0.50f)
+            glow(GlowIndigo, w * 0.92f, h * 0.82f, w * 0.95f, 0.60f)
+            glow(Amber, w * 0.02f, h * 0.66f, w * 0.65f, 0.22f)
         }
 
         when (onboardingDone) {

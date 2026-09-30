@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,6 +81,7 @@ import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.theme.Amber
 import com.alarsheef.archive.ui.theme.GlassBorder
+import com.alarsheef.archive.ui.theme.GlassStrong
 import com.alarsheef.archive.ui.theme.TealBright
 import com.alarsheef.archive.util.FileUtils
 import kotlinx.coroutines.launch
@@ -201,32 +203,44 @@ fun FilesScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             if (hasSelection) {
-                TopAppBar(
+                CenterAlignedTopAppBar(
                     title = { Text("${selected.size} محدد") },
                     navigationIcon = {
-                        IconButton(onClick = { selected = emptySet() }) {
+                        IconButton(
+                            onClick = { selected = emptySet() },
+                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
+                        ) {
                             Icon(Icons.Filled.Close, contentDescription = "إلغاء التحديد")
                         }
                     },
                     actions = {
-                        IconButton(onClick = {
-                            selected = if (selected.size == filtered.size) emptySet() else filtered.map { it.id }.toSet()
-                        }) {
+                        IconButton(
+                            onClick = {
+                                selected = if (selected.size == filtered.size) emptySet() else filtered.map { it.id }.toSet()
+                            },
+                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
+                        ) {
                             Icon(Icons.Filled.Check, contentDescription = "تحديد الكل")
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
                 )
             } else {
-                TopAppBar(
+                CenterAlignedTopAppBar(
                     title = { Text(String.format(Locale.ROOT, "%02d %s %d", day, FileUtils.monthArabicName(month), year)) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
+                        ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
                         }
                     },
                     actions = {
-                        IconButton(onClick = { shareScope() }) {
+                        IconButton(
+                            onClick = { shareScope() },
+                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
+                        ) {
                             Icon(Icons.Filled.Share, contentDescription = "مشاركة")
                         }
                     },
