@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,7 +76,8 @@ import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.components.SettingsPanelContent
 import com.alarsheef.archive.ui.components.rememberScopeSuggestions
-import com.alarsheef.archive.ui.theme.Teal
+import com.alarsheef.archive.ui.theme.GlassBorder
+import com.alarsheef.archive.ui.theme.GlassStrong
 import com.alarsheef.archive.util.FileUtils
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
@@ -303,7 +305,11 @@ when (target) {
     }
 
     if (activePanel != null) {
-        ModalBottomSheet(onDismissRequest = { activePanel = null }, sheetState = sheetState) {
+        ModalBottomSheet(
+            onDismissRequest = { activePanel = null },
+            sheetState = sheetState,
+            containerColor = com.alarsheef.archive.ui.theme.GlassSheet
+        ) {
             when (activePanel) {
                  DrawerPanel.SETTINGS -> SettingsPanelContent(
                      prefs = settingsPrefs,
@@ -401,7 +407,8 @@ private fun YearRowCard(
     var menuOpen by remember { mutableStateOf(false) }
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth()
+            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -428,7 +435,7 @@ private fun YearRowCard(
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
             }
             Box(
-                modifier = Modifier.size(46.dp).background(Teal, RoundedCornerShape(14.dp)),
+                modifier = Modifier.size(46.dp).background(GlassStrong, RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Filled.CalendarMonth, contentDescription = null, tint = Color.White)
@@ -450,12 +457,13 @@ private fun SearchResultsList(results: List<ArchivedImage>, onOpenResult: (Archi
         items(results, key = { it.id }) { img ->
             Card(
                 onClick = { onOpenResult(img) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth()
+                    .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
                 shape = RoundedCornerShape(18.dp)
             ) {
                 Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(46.dp).background(Teal, RoundedCornerShape(10.dp)),
+                        modifier = Modifier.size(46.dp).background(GlassStrong, RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Color.White)
@@ -482,7 +490,7 @@ private fun EmptyYearsState(text: String = "لا يوجد أرشيف بعد") {
                 Icons.Filled.CalendarMonth,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
-                tint = Teal.copy(alpha = 0.4f)
+                tint = Color.White.copy(alpha = 0.45f)
             )
             Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 12.dp))
         }

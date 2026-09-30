@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -78,7 +79,8 @@ import com.alarsheef.archive.ui.components.AddFab
 import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.theme.Amber
-import com.alarsheef.archive.ui.theme.Teal
+import com.alarsheef.archive.ui.theme.GlassBorder
+import com.alarsheef.archive.ui.theme.TealBright
 import com.alarsheef.archive.util.FileUtils
 import kotlinx.coroutines.launch
 import java.io.File
@@ -279,8 +281,8 @@ fun FilesScreen(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        BottomActionButton(Icons.Filled.Share, "مشاركة", Teal) { shareDialogOpen = true }
-                        BottomActionButton(Icons.Filled.SwapHoriz, "نقل", Teal) { moveDialogOpen = true }
+                        BottomActionButton(Icons.Filled.Share, "مشاركة", TealBright) { shareDialogOpen = true }
+                        BottomActionButton(Icons.Filled.SwapHoriz, "نقل", TealBright) { moveDialogOpen = true }
                         BottomActionButton(Icons.Filled.Delete, "حذف", MaterialTheme.colorScheme.error) { confirmDeleteOpen = true }
                     }
                 }
@@ -386,7 +388,8 @@ private fun FileRow(
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth()
+            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {

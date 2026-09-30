@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.documentfile.provider.DocumentFile
 import com.alarsheef.archive.settings.SettingsPreferences
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,7 +66,8 @@ import com.alarsheef.archive.ui.components.CustomLabelDialog
 import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.components.rememberScopeSuggestions
-import com.alarsheef.archive.ui.theme.Teal
+import com.alarsheef.archive.ui.theme.GlassBorder
+import com.alarsheef.archive.ui.theme.GlassStrong
 import com.alarsheef.archive.util.FileUtils
 import kotlinx.coroutines.launch
 
@@ -291,7 +293,8 @@ private fun MonthRowCard(
     var menuOpen by remember { mutableStateOf(false) }
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth()
+            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -319,7 +322,7 @@ private fun MonthRowCard(
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
             }
             Box(
-                modifier = Modifier.size(46.dp).background(Teal, RoundedCornerShape(14.dp)),
+                modifier = Modifier.size(46.dp).background(GlassStrong, RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Filled.CalendarViewDay, contentDescription = null, tint = Color.White)
@@ -336,7 +339,7 @@ private fun EmptyState(text: String) {
                 Icons.Filled.CalendarViewDay,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
-                tint = Teal.copy(alpha = 0.4f)
+                tint = Color.White.copy(alpha = 0.45f)
             )
             Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 12.dp))
         }

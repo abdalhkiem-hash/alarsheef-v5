@@ -1,6 +1,7 @@
 package com.alarsheef.archive.ui.screens.faces
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,7 +51,8 @@ import com.alarsheef.archive.data.dao.FaceGroupRow
 import com.alarsheef.archive.data.dao.FaceMemberRow
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.ui.theme.Amber
-import com.alarsheef.archive.ui.theme.Teal
+import com.alarsheef.archive.ui.theme.GlassBorder
+import com.alarsheef.archive.ui.theme.Mint
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -155,7 +157,7 @@ private fun GroupsList(
             )
             if (groups.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Face, contentDescription = null, modifier = Modifier.size(56.dp), tint = Teal.copy(alpha = 0.4f))
+                    Icon(Icons.Filled.Face, contentDescription = null, modifier = Modifier.size(56.dp), tint = Color.White.copy(alpha = 0.45f))
                 }
             } else {
                 LazyColumn(
@@ -165,7 +167,8 @@ private fun GroupsList(
                     items(groups, key = { it.groupKey }) { grp ->
                         Card(
                             onClick = { onOpenGroup(grp.groupKey) },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth()
+                                .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
                             shape = RoundedCornerShape(18.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
@@ -187,7 +190,7 @@ private fun GroupsList(
                                     )
                                 }
                                 IconButton(onClick = { onRename(grp) }) {
-                                    Icon(Icons.Filled.Edit, contentDescription = "تسمية", tint = Teal)
+                                    Icon(Icons.Filled.Edit, contentDescription = "تسمية", tint = Mint)
                                 }
                                 IconButton(onClick = { onDelete(grp) }) {
                                     Icon(Icons.Filled.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
@@ -234,7 +237,8 @@ private fun MembersList(
                 items(members, key = { it.memberId }) { member ->
                     Card(
                         onClick = { onOpenImage(member.year, member.month, member.day, member.imageId) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth()
+                            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
                         shape = RoundedCornerShape(18.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {

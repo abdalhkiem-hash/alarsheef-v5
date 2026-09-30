@@ -29,7 +29,7 @@ import androidx.core.content.ContextCompat
 import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.data.repository.ImportResult
-import com.alarsheef.archive.ui.theme.Amber
+import com.alarsheef.archive.ui.theme.TealDark
 import com.alarsheef.archive.util.FeatureFlags
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -90,8 +90,8 @@ fun AddFab(
     Box {
         ExtendedFloatingActionButton(
             onClick = { menuExpanded = true },
-            containerColor = Amber,
-            contentColor = Color.White,
+            containerColor = Color.White,
+            contentColor = TealDark,
             text = { Text("إضافة") },
             icon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) }
         )

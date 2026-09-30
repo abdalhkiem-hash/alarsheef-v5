@@ -9,11 +9,26 @@ val TealLight = Color(0xFFE3F5F2)
 val Amber = Color(0xFFF0A63A)
 val AmberDark = Color(0xFFC97F1F)
 
-// ألوان عصرية نظيفة: محايدة دافئة للخلفية + خيوط شعرية + نص ثانوي هادئ
-val AppBackground = Color(0xFFF5F6F4)
-val Surface = Color(0xFFFFFFFF)
-val TextPrimary = Color(0xFF182321)
-val ErrorRed = Color(0xFFB3261E)
-val TextMuted = Color(0xFF6D7A77)
-val OutlineSoft = Color(0xFFE6E9E5)
-val SurfaceTinted = Color(0xFFEFF1EE)
+// تركوازي مضيء للعناصر الصغيرة فوق التدرّج (روابط/أزرار/مؤشرات)
+val TealBright = Color(0xFF2DD4BF)
+val Mint = Color(0xFFE6FFFB)
+
+// تدرّج الخلفية الرئيسي (نمط زجاجي متدرّج معتمد من مخطط B)
+val GradientStart = Color(0xFF0F766E)
+val GradientMid = Color(0xFF12A5A0)
+val GradientEnd = Color(0xFF4F46E5)
+val GlowCyan = Color(0xFF2DD4BF)
+val GlowIndigo = Color(0xFF6366F1)
+
+// زجاج: أسطح شفافة + خيوط بيضاء شعرية + نصوص بيضاء
+val Glass = Color(0x26FFFFFF)      // 15% — بطاقة/سطح أساسي
+val GlassStrong = Color(0x38FFFFFF) // 22% — بلاطات أيقونات وطبقات بارزة
+val GlassBorder = Color(0x4DFFFFFF) // 30% — خيط شعري حدّي
+val GlassSheet = Color(0x54FFFFFF)  // 33% — ألواح منزلقة (قراءة أوضح فوق المحتوى)
+val AppBackground = Color.Transparent
+val Surface = Glass
+val TextPrimary = Color(0xFFFFFFFF)
+val ErrorRed = Color(0xFFFF6B6B)
+val TextMuted = Color(0xB3FFFFFF)  // 70% — نص ثانوي
+val OutlineSoft = Color(0x4DFFFFFF)
+val SurfaceTinted = Color(0x1AFFFFFF) // 10%

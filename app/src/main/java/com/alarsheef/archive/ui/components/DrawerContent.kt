@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.alarsheef.archive.ui.theme.Teal
 
 enum class DrawerPanel { SETTINGS, EXPORT_IMPORT, BACKUP, ABOUT, AI }
 
@@ -48,7 +47,7 @@ private fun DrawerRow(icon: ImageVector, label: String, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = Teal)
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
         Text(label, modifier = Modifier.padding(start = 16.dp))
     }
 }
