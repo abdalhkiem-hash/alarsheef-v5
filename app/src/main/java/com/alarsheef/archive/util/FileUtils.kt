@@ -79,6 +79,20 @@ object FileUtils {
 
     fun twoDigits(value: Int): String = String.format(Locale.ROOT, "%02d", value)
 
+    /** يحوّل عدد البايتات إلى نص عربي مقروء مثل "4.2 جيجابايت" أو "830 ميجابايت". */
+    fun formatBytes(bytes: Long): String {
+        if (bytes <= 0L) return "0 بايت"
+        val kb = 1024.0
+        val mb = kb * 1024
+        val gb = mb * 1024
+        return when {
+            bytes >= gb -> String.format(Locale.ROOT, "%.1f جيجابايت", bytes / gb)
+            bytes >= mb -> String.format(Locale.ROOT, "%.0f ميجابايت", bytes / mb)
+            bytes >= kb -> String.format(Locale.ROOT, "%.0f كيلوبايت", bytes / kb)
+            else -> "$bytes بايت"
+        }
+    }
+
     fun formatTime(millis: Long): String {
         if (millis <= 0) return ""
         val formatter = java.text.SimpleDateFormat("hh:mm a", Locale.forLanguageTag("ar"))

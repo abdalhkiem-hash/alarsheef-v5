@@ -45,6 +45,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * بوابة المحتوى [ImportGate]: في وضع "المستندات فقط" تُرفض الصور العائلية
  * (وجوه) والمناظر الطبيعية، ولا يُستورد إلا ما يبدو مستندًا/فاتورة/لقطة شاشة.
+ * تُطبَّق الآن على صفحات PDF المحوَّلة أيضًا (تحديث 1/10/2026) — لا تمييز
+ * بين صورة وصفحة PDF بعد التحويل، فكلاهما يمرّ على نفس الفحص.
  *
  * حماية من السباق: فحص واحد فقط يعمل في كل وقت (`RUNNING`)، ويتجاوز الآخر
  * بصمت بدل أن يتراكم ملفات يتيمة على القرص.
@@ -112,13 +114,14 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
 
             // فحص MediaStore للـPDF: كشف تلقائي وتحويل الصفحات — قبل SAF
             // لتسبق هويات المسارات فرع SAF على نفس الملفات
-            newImagesCount += scanMediaStorePdfs(repository, todayStart, folders, existingPaths)
+            newImagesCount += scanMediaStorePdfs(repository, todayStart, excludePersonalPhotos,
+                documentsOnly, folders, existingPaths)
 
             // فحص SAF: الوثائق وملفات PDF فقط (الصور تُعالَج عبر MediaStore أعلاه)
             for (folder in folders) {
                 if (folder.type is FolderType.Saf) {
                     newImagesCount += scanSafFolder(folder.type.treeUri, folder.source, repository,
-                        todayStart, existingPaths)
+                        todayStart, excludePersonalPhotos, documentsOnly, existingPaths)
                 }
             }
 
@@ -286,8 +289,9 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
      * للمسار (`content://com.android.externalstorage.documents/document/primary%3A...`)
      * حتى لا يُعالَج نفس الملف مجددًا في مرحلة SAF لاحقًا داخل نفس الفحص.
      *
-     * ملفات PDF تُعامَل كمستندات: تتجاوز بوابة المحتوى (لا كشف وجوه) —
-     * متسقة مع معالجة فرع SAF.
+     * ملفات PDF تُمرَّر الآن على نفس [ImportGate] المطبَّق على الصور — كل
+     * صفحة محوَّلة تُفحص بـ[SmartClassifier] قبل الاستيراد (تحديث 1/10/2026:
+     * كانت تتجاوز البوابة بالكامل، فيُستورد أي PDF بلا تحقق محتوى).
      *
      * على أندرويد 13+ قد تُخفي MediaStore ملفات غير الوسائط عند عدم وجود
      * صلاحية — يُسجَّل تنبيه وتُترك مجلدات SAF المعتمدة كالطريق الاحتياطي.
@@ -297,6 +301,8 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
     private suspend fun scanMediaStorePdfs(
         repository: ArchiveRepository,
         todayStart: Long,
+        excludePersonalPhotos: Boolean,
+        documentsOnly: Boolean,
         folders: List<SourceFolder>,
         existingPaths: MutableSet<String>,
     ): Int = withContext(Dispatchers.IO) {
@@ -369,6 +375,12 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     var pdfCount = 0
                     pages.forEachIndexed { index, page ->
                         val pageIdentity = if (index == 0) originalPath else "$originalPath#page=$index"
+                        val faces = if (excludePersonalPhotos || documentsOnly) FaceDetectionUtil.hasFace(page) else false
+                        if (!ImportGate.shouldArchive(page, faces, excludePersonalPhotos, documentsOnly, "$displayName#$index")) {
+                            existingPaths.add(pageIdentity)
+                            page.delete()
+                            return@forEachIndexed
+                        }
                         val result = repository.importFile(
                             sourceFile = page, sourceApp = source,
                             deleteSourceAfterImport = true, countDuplicate = false,
@@ -442,10 +454,12 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         source: SourceApp,
         repository: ArchiveRepository,
         todayStart: Long,
+        excludePersonalPhotos: Boolean,
+        documentsOnly: Boolean,
         existingPaths: MutableSet<String>,
     ): Int {
         val root = DocumentFile.fromTreeUri(applicationContext, treeUri) ?: return 0
-        return visitDocuments(root, source, repository, todayStart, 0, existingPaths)
+        return visitDocuments(root, source, repository, todayStart, excludePersonalPhotos, documentsOnly, 0, existingPaths)
     }
 
     private suspend fun visitDocuments(
@@ -453,6 +467,8 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         source: SourceApp,
         repository: ArchiveRepository,
         todayStart: Long,
+        excludePersonalPhotos: Boolean,
+        documentsOnly: Boolean,
         depth: Int,
         existingPaths: MutableSet<String>,
     ): Int {
@@ -461,7 +477,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         for (doc in folder.listFiles()) {
             currentCoroutineContext().ensureActive()
             if (doc.isDirectory) {
-                count += visitDocuments(doc, source, repository, todayStart, depth + 1, existingPaths)
+                count += visitDocuments(doc, source, repository, todayStart, excludePersonalPhotos, documentsOnly, depth + 1, existingPaths)
                 continue
             }
             if (!doc.isFile || doc.name == null) continue
@@ -488,6 +504,12 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                         // الهوية: الصفحة الأولى تحمل uri المجرد كعلامة دائمة على
                         // أن الملف كله عولج، وبقية الصفحات تحمل uri#page=N.
                         val pageIdentity = if (index == 0) docIdentity else "$docIdentity#page=$index"
+                        val faces = if (excludePersonalPhotos || documentsOnly) FaceDetectionUtil.hasFace(page) else false
+                        if (!ImportGate.shouldArchive(page, faces, excludePersonalPhotos, documentsOnly, "$name#$index")) {
+                            existingPaths.add(pageIdentity)
+                            page.delete()
+                            return@forEachIndexed
+                        }
                         val result = repository.importFile(
                             sourceFile = page, sourceApp = source,
                             deleteSourceAfterImport = true, countDuplicate = false,

@@ -159,4 +159,12 @@ interface AiDao {
 
     @Query("SELECT text FROM ocr_texts WHERE imageId = :imageId")
     suspend fun textForImage(imageId: Long): String?
+
+    /** عدد الصور المصنَّفة "مستند/ملف نصي" ضمن سنة معيّنة — لبطاقة إحصاء الرئيسية. */
+    @Query(
+        """SELECT COUNT(DISTINCT l.imageId) FROM image_labels l
+           JOIN archived_images i ON l.imageId = i.id
+           WHERE l.label = 'مستند / ملف نصي' AND i.year = :year"""
+    )
+    fun observeDocumentCount(year: Int): Flow<Int>
 }

@@ -96,7 +96,7 @@ fun AiPanelContent(
         }
 
         if (cloudEnabled) {
-            SwitchRow2("استخدام نموذج 2.5-pro بدل flash الأرخص", usePro) {
+            SwitchRow2("استخدام نموذج ${GeminiRepository.MODEL_PRO} بدل ${GeminiRepository.MODEL_FLASH} الأرخص", usePro) {
                 scope.launch { prefs.setGeminiUsePro(it) }
             }
             Text(

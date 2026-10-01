@@ -112,6 +112,48 @@ class ArchiveRepository(context: Context) {
     fun observeDayImages(year: Int, month: Int, day: Int): Flow<List<ArchivedImage>> =
         imageDao.observeImagesForDay(year, month, day)
 
+    // ---------- لوحة الرئيسية (بطاقة الإحصاء + آخر الصور) ----------
+
+    /** إحصاء شامل جاهز لعرضه في بطاقة الرئيسية: الملفات، الألبومات، المستندات، الوجوه، صور اليوم. */
+    data class DashboardStats(
+        val totalFiles: Int,
+        val albumCount: Int,
+        val documentCount: Int,
+        val faceCount: Int,
+        val todayCount: Int
+    )
+
+    fun observeDashboardStats(year: Int): Flow<DashboardStats> {
+        val startOfDay = FileUtils.startOfToday()
+        return combine(
+            imageDao.observeOverallStats(year),
+            imageDao.observeTodayCount(startOfDay),
+            aiDao.observeDocumentCount(year),
+            aiDao.observeFaceGroupRows()
+        ) { overall, today, docs, faceGroups ->
+            DashboardStats(
+                totalFiles = overall.totalFiles,
+                albumCount = overall.albumCount,
+                documentCount = docs,
+                faceCount = faceGroups.size,
+                todayCount = today
+            )
+        }
+    }
+
+    fun observeRecentImages(limit: Int = 8): Flow<List<ArchivedImage>> =
+        imageDao.observeRecentImages(limit)
+
+    /**
+     * المساحة الفعلية المستخدمة على القرص لكل الملفات المؤرشفة (بايت).
+     * قراءة IO لمرة واحدة (لا Flow) — تُستدعى عند فتح الرئيسية فقط، لا تتكرر مع كل تغيير.
+     */
+    suspend fun computeStorageUsedBytes(): Long = withContext(Dispatchers.IO) {
+        imageDao.getAllStoredPaths().sumOf { path ->
+            runCatching { File(path).length() }.getOrDefault(0L)
+        }
+    }
+
     // ---------- قراءات لمرة واحدة للتصدير والمشاركة بالعناقيد ----------
 
     suspend fun allForExport(): List<ArchivedImage> = imageDao.getAllOnce()

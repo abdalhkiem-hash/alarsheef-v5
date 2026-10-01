@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 data class YearSummary(val year: Int, val fileCount: Int, val latestMonth: Int)
 data class MonthSummary(val month: Int, val fileCount: Int)
 data class DaySummary(val day: Int, val fileCount: Int, val lastImportedAt: Long)
+data class OverallStats(val totalFiles: Int, val albumCount: Int)
 
 @Dao
 interface ArchivedImageDao {
@@ -128,4 +129,25 @@ interface ArchivedImageDao {
 
     @Query("SELECT * FROM archived_images WHERE year = :year AND month = :month AND day = :day ORDER BY importedAt DESC")
     suspend fun getByDayOnce(year: Int, month: Int, day: Int): List<ArchivedImage>
+
+    // ---------- لوحة الرئيسية (إجماليات + آخر الصور) ----------
+
+    /** إجمالي ملفات سنة معيّنة + عدد الأشهر التي تحمل محتوى فيها ("ألبومات"). */
+    @Query(
+        """SELECT COUNT(*) AS totalFiles, COUNT(DISTINCT month) AS albumCount
+           FROM archived_images WHERE year = :year"""
+    )
+    fun observeOverallStats(year: Int): Flow<OverallStats>
+
+    /** عدد الملفات التي دخلت الأرشيف اليوم (منذ منتصف الليل بتوقيت الجهاز). */
+    @Query("SELECT COUNT(*) FROM archived_images WHERE importedAt >= :startOfDayMillis")
+    fun observeTodayCount(startOfDayMillis: Long): Flow<Int>
+
+    /** آخر N ملف دخل الأرشيف، بلا اعتبار للسنة/الشهر — لشريط "آخر الصور". */
+    @Query("SELECT * FROM archived_images ORDER BY importedAt DESC LIMIT :limit")
+    fun observeRecentImages(limit: Int): Flow<List<ArchivedImage>>
+
+    /** كل المسارات المخزَّنة — تُستخدم لحساب المساحة المستخدمة فعليًا على القرص (قراءة لمرة واحدة، ثقيلة نسبيًا). */
+    @Query("SELECT storedPath FROM archived_images")
+    suspend fun getAllStoredPaths(): List<String>
 }

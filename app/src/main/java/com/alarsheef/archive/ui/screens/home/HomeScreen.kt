@@ -6,22 +6,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
@@ -39,12 +45,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,11 +60,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.alarsheef.archive.data.entities.ArchivedImage
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.data.repository.YearRow
@@ -82,6 +93,7 @@ import com.alarsheef.archive.ui.theme.GlassStrong
 import com.alarsheef.archive.util.FileUtils
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 private sealed class PendingExport {
     data object All : PendingExport()
@@ -102,6 +114,21 @@ fun HomeScreen(
     val porter = remember { ArchivePorter(context, repository) }
 
     val years by repository.observeYearRows().collectAsStateWithLifecycle(initialValue = emptyList())
+    val latestYear = years.firstOrNull()?.year
+
+    val dashboardStats by remember(latestYear) {
+        latestYear?.let { repository.observeDashboardStats(it) }
+            ?: emptyFlow()
+    }.collectAsStateWithLifecycle(
+        initialValue = ArchiveRepository.DashboardStats(0, 0, 0, 0, 0)
+    )
+    val recentImages by remember { repository.observeRecentImages(8) }
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    var storageBytes by remember { mutableStateOf(0L) }
+    LaunchedEffect(Unit) {
+        storageBytes = repository.computeStorageUsedBytes()
+    }
+
     var query by remember { mutableStateOf("") }
     val isSearching = query.isNotBlank()
     val searchFieldFocus = remember { FocusRequester() }
@@ -290,8 +317,28 @@ when (target) {
                 } else {
                     LazyColumn(
                         contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, 96.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        item {
+                            HomeDashboard(
+                                stats = dashboardStats,
+                                storageText = FileUtils.formatBytes(storageBytes),
+                                latestYear = latestYear,
+                                recentImages = recentImages,
+                                onOpenYear = onOpenYear,
+                                onOpenFaces = onOpenFaces,
+                                onOpenImage = onOpenImage
+                            )
+                        }
+                        if (years.size > 1) {
+                            item {
+                                Text(
+                                    "كل السنوات",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
                         items(years, key = { it.year }) { row ->
                             YearRowCard(
                                 row = row,
@@ -485,6 +532,118 @@ private fun SearchResultsList(results: List<ArchivedImage>, onOpenResult: (Archi
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun HomeDashboard(
+    stats: ArchiveRepository.DashboardStats,
+    storageText: String,
+    latestYear: Int?,
+    recentImages: List<ArchivedImage>,
+    onOpenYear: (Int) -> Unit,
+    onOpenFaces: () -> Unit,
+    onOpenImage: (ArchivedImage) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // بطاقة السنة الكبيرة: إجمالي الملفات/الألبومات/المستندات + المساحة المستخدمة
+        Card(
+            onClick = { latestYear?.let(onOpenYear) },
+            modifier = Modifier.fillMaxWidth()
+                .border(1.dp, GlassBorder, RoundedCornerShape(24.dp)),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = GlassStrong)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    "${latestYear ?: FileUtils.today().first}",
+                    style = MaterialTheme.typography.displaySmall,
+                    color = Color.White
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "${stats.totalFiles} صورة · ${stats.albumCount} ألبوم · ${stats.documentCount} مستند",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+                Spacer(Modifier.height(14.dp))
+                Box(
+                    modifier = Modifier
+                        .background(GlassBorder, RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Text("مساحة مستخدمة $storageText", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+
+        // بطاقتا "الوجوه" و"الصور اليوم"
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            StatTile(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.Person,
+                title = "الوجوه",
+                subtitle = "${stats.faceCount} وجهًا محفوظًا",
+                onClick = onOpenFaces
+            )
+            StatTile(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Filled.CameraAlt,
+                title = "الصور اليوم",
+                subtitle = "${stats.todayCount} صورة جديدة",
+                onClick = null
+            )
+        }
+
+        // شريط "آخر الصور"
+        if (recentImages.isNotEmpty()) {
+            Text("آخر الصور", style = MaterialTheme.typography.titleMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(recentImages, key = { it.id }) { img ->
+                    AsyncImage(
+                        model = File(img.storedPath),
+                        contentDescription = img.fileName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(88.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable { onOpenImage(img) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatTile(
+    modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: (() -> Unit)?
+) {
+    Card(
+        onClick = { onClick?.invoke() },
+        modifier = modifier.border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Box(
+                modifier = Modifier.size(40.dp).background(GlassStrong, RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = Color.White)
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
         }
     }
 }
