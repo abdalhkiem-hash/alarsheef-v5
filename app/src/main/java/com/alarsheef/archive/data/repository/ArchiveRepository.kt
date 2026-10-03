@@ -1,11 +1,14 @@
 ﻿package com.alarsheef.archive.data.repository
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
 import com.alarsheef.archive.data.AppDatabase
 import com.alarsheef.archive.data.dao.DayGroupDao
 import com.alarsheef.archive.data.dao.SubFolderDao
@@ -15,6 +18,7 @@ import com.alarsheef.archive.data.entities.CustomLabel
 import com.alarsheef.archive.data.entities.DayGroup
 import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.data.entities.SubFolder
+import com.alarsheef.archive.scanner.ImportEnhancer
 import com.alarsheef.archive.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -603,6 +607,81 @@ class ArchiveRepository(context: Context) {
             tempFile?.delete()
             ImportResult.Failed
         }
+    }
+
+    /**
+     * يضيف إلى الأرشيف نسخة محسّنة من صورة URI بجانب الأصل:
+     * قصّ حدود المستند و/أو تحسين تلقائي حسب خياري الاستيراد.
+     * يرجع true إذا أُضيفت نسخة محسّنة فعلاً (فشل المعالجة = صامت وfalse).
+     */
+    suspend fun importEnhancedFromUri(uri: Uri, autoCrop: Boolean, autoEnhance: Boolean): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!autoCrop && !autoEnhance) return@withContext false
+            var processed: Bitmap? = null
+            var temp: File? = null
+            try {
+                var src = decodeForEnhance(uri) ?: return@withContext false
+                if (autoCrop) {
+                    ImportEnhancer.cropDocument(src)?.let { cropped ->
+                        if (cropped !== src) src.recycle()
+                        src = cropped
+                    }
+                }
+                val built: Bitmap = if (autoEnhance) {
+                    val e = ImportEnhancer.enhance(src)
+                    if (e !== src) src.recycle()
+                    e
+                } else src
+                processed = built
+
+                temp = File(context.cacheDir, "enh_${System.nanoTime()}.jpg")
+                val out = temp
+                out.outputStream().use { stream ->
+                    built.compress(Bitmap.CompressFormat.JPEG, 92, stream)
+                }
+                built.recycle(); processed = null
+                importFile(out, SourceApp.MANUAL_IMPORT) is ImportResult.Added
+            } catch (e: Exception) {
+                false
+            } finally {
+                runCatching { processed?.recycle() }
+                runCatching { temp?.let { if (it.exists()) it.delete() } }
+            }
+        }
+
+    /** فك ترميز URI بسقف 4096px مع تطبيق اتجاه الدوران من EXIF. */
+    private fun decodeForEnhance(uri: Uri): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 4096) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bitmap = context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, opts)
+        } ?: return null
+
+        val orientation = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                ExifInterface(stream).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+            } ?: ExifInterface.ORIENTATION_NORMAL
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+        val degrees = when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+        if (degrees == 0f) return bitmap
+        val matrix = Matrix().apply { postRotate(degrees) }
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (rotated !== bitmap) bitmap.recycle()
+        return rotated
     }
 
     /** يجهّز ملف وجهة مؤقت + رابط FileProvider لاستخدامهما مع كاميرا النظام */

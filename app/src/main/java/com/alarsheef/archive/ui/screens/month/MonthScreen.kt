@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.documentfile.provider.DocumentFile
 import com.alarsheef.archive.settings.SettingsPreferences
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +54,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -67,6 +69,8 @@ import com.alarsheef.archive.ui.components.CustomLabelDialog
 import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.components.rememberScopeSuggestions
+import androidx.compose.ui.draw.clip
+import com.alarsheef.archive.ui.theme.Glass
 import com.alarsheef.archive.ui.theme.GlassBorder
 import com.alarsheef.archive.ui.theme.GlassStrong
 import com.alarsheef.archive.util.FileUtils
@@ -295,15 +299,24 @@ private fun MonthRowCard(
     onAddSubFolder: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    Card(
-        onClick = onClick,
+    Box(
         modifier = Modifier.fillMaxWidth()
-            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Glass, RoundedCornerShape(18.dp))
+            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(row.label ?: FileUtils.monthArabicName(row.month), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                val subtitle = if (row.label != null) {
+                    "${FileUtils.monthArabicName(row.month)} · ${row.fileCount} ملف"
+                } else {
+                    "${row.fileCount} ملف"
+                }
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+            }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
@@ -315,21 +328,6 @@ private fun MonthRowCard(
                     DropdownMenuItem(text = { Text("إضافة مجلد فرعي") }, onClick = { menuOpen = false; onAddSubFolder() })
                     DropdownMenuItem(text = { Text("حذف", color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; onDelete() })
                 }
-            }
-            Column(modifier = Modifier.padding(start = 4.dp).weight(1f)) {
-                Text(row.label ?: FileUtils.monthArabicName(row.month), style = MaterialTheme.typography.titleMedium)
-                val subtitle = if (row.label != null) {
-                    "${FileUtils.monthArabicName(row.month)} · ${row.fileCount} ملف"
-                } else {
-                    "${row.fileCount} ملف"
-                }
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-            }
-            Box(
-                modifier = Modifier.size(46.dp).background(GlassStrong, RoundedCornerShape(14.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.CalendarViewDay, contentDescription = null, tint = Color.White)
             }
         }
     }

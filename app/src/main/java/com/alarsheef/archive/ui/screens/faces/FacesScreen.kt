@@ -1,18 +1,27 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.alarsheef.archive.ui.screens.faces
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,6 +33,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,7 +73,7 @@ import java.io.File
  * شاشة "مجموعات الوجوه": قائمة بالأشخاص المكتشفين تلقائيًا،
  * ومن داخل كل مجموعة قائمة بصوره (صور الوجوه المقصوصة محليًا + مصدر الصورة الأصلية).
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FacesScreen(
     repository: ArchiveRepository,
@@ -165,42 +176,47 @@ private fun GroupsList(
                     Icon(Icons.Filled.Face, contentDescription = null, modifier = Modifier.size(56.dp), tint = Color.White.copy(alpha = 0.45f))
                 }
             } else {
-                LazyColumn(
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
                     contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    items(groups, key = { it.groupKey }) { grp ->
-                        Card(
-                            onClick = { onOpenGroup(grp.groupKey) },
-                            modifier = Modifier.fillMaxWidth()
-                                .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    gridItems(groups, key = { it.groupKey }) { grp ->
+                        var menuOpen by remember { mutableStateOf(false) }
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.combinedClickable(
+                                onClick = { onOpenGroup(grp.groupKey) },
+                                onLongClick = { menuOpen = true }
+                            )
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CoverThumb(path = grp.coverCropPath, size = 54)
-                                Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
-                                    Text(
-                                        grp.name ?: "مجموعة ${grp.groupKey}",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        maxLines = 1
+                            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
+                                FaceCircle(path = grp.coverCropPath)
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("تسمية المجموعة") },
+                                        onClick = { menuOpen = false; onRename(grp) }
                                     )
-                                    Text(
-                                        "${grp.memberCount} صورة",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    DropdownMenuItem(
+                                        text = { Text("حذف المجموعة", color = MaterialTheme.colorScheme.error) },
+                                        onClick = { menuOpen = false; onDelete(grp) }
                                     )
-                                }
-                                IconButton(onClick = { onRename(grp) }) {
-                                    Icon(Icons.Filled.Edit, contentDescription = "تسمية", tint = Mint)
-                                }
-                                IconButton(onClick = { onDelete(grp) }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
+                            if (!grp.name.isNullOrBlank()) {
+                                Text(
+                                    grp.name,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(top = 6.dp)
+                                )
+                            }
+                            Text(
+                                "${grp.memberCount} صورة",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                            )
                         }
                     }
                 }
@@ -265,6 +281,32 @@ private fun MembersList(
                     }
                 }
             }
+        }
+    }
+}
+
+/** صورة الوجه دائرية كما في معاينة الشاشات (بلاطة بيضاوية مع بديل كهرماني) */
+@Composable
+private fun FaceCircle(path: String?) {
+    val cropFile = path?.let { File(it) }?.takeIf { it.exists() }
+    Box(
+        modifier = Modifier.fillMaxSize().clip(CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        if (cropFile == null) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Amber.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Person, contentDescription = null, tint = Amber, modifier = Modifier.size(40.dp))
+            }
+        } else {
+            AsyncImage(
+                model = cropFile,
+                contentDescription = "وجه",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }

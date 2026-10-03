@@ -49,25 +49,27 @@ fun AddFab(
     var menuExpanded by remember { mutableStateOf(false) }
     var pendingCaptureFile by remember { mutableStateOf<File?>(null) }
 
-    fun showResult(result: ImportResult) {
-        val message = when (result) {
-            is ImportResult.Added -> "تمت الإضافة إلى أرشيف اليوم"
-            is ImportResult.Duplicate -> "هذي الصورة موجودة من قبل — استُلمت ${result.newCount} مرات"
-            is ImportResult.Failed -> "تعذّر استيراد الملف"
-        }
-        scope.launch {
-            snackbarHostState.showSnackbar(message)
-            if (result is ImportResult.Added) {
-                com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
-            }
+fun showResult(result: ImportResult, note: String? = null) {
+    val baseMessage = when (result) {
+        is ImportResult.Added -> "تمت الإضافة إلى الأرشيف"
+        is ImportResult.Duplicate -> "هذي الصورة موجودة من قبل — استُلمت ${result.newCount} مرات"
+        is ImportResult.Failed -> "تعذّر استيراد الملف"
+    }
+    val notePart = note ?: ""
+    val message = if (notePart.isNotEmpty()) "$baseMessage $notePart" else baseMessage
+    scope.launch {
+        snackbarHostState.showSnackbar(message)
+        if (result is ImportResult.Added) {
+            com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
         }
     }
+}
 
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val file = pendingCaptureFile
         pendingCaptureFile = null
         if (success && file != null) {
-            scope.launch { showResult(repository.importFile(file, SourceApp.MANUAL_CAMERA)) }
+            scope.launch { showResult(repository.importFile(file, SourceApp.MANUAL_CAMERA), null) }
         }
     }
 
@@ -83,7 +85,7 @@ fun AddFab(
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
-            scope.launch { showResult(repository.importFromUri(uri, SourceApp.MANUAL_IMPORT)) }
+            scope.launch { showResult(repository.importFromUri(uri, SourceApp.MANUAL_IMPORT), null) }
         }
     }
 

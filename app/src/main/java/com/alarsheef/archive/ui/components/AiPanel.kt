@@ -19,12 +19,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alarsheef.archive.ai.OcrEngine
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.settings.SettingsPreferences
+import com.alarsheef.archive.ui.theme.TealBright
 import com.alarsheef.archive.work.AiAnalysisScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -58,19 +60,18 @@ fun AiPanelContent(
     val keyConfigured = remember { GeminiRepository.isConfigured() }
 
     Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
-        Text("الذكاء الاصطناعي", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
+        PanelTitle("الذكاء الاصطناعي")
         Text(
             "فحص محلي سريع أولًا دون إنترنت، ومعه Gemini السحابي عند الحاجة فقط " +
                 "للصور الغامضة واستخراج الفواتير ودقة النص العربي.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            color = Color.White.copy(alpha = 0.65f),
+            modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-        SwitchRow2("التصنيف التلقائي للمحتوى", labelsEnabled) { scope.launch { prefs.setAiLabelsEnabled(it) } }
-        SwitchRow2("استخراج النصوص (OCR)", ocrEnabled) { scope.launch { prefs.setAiOcrEnabled(it) } }
-        SwitchRow2("تجميع الصور حسب الوجوه", facesEnabled) { scope.launch { prefs.setAiFacesEnabled(it) } }
+        SettingRow("التصنيف التلقائي للمحتوى", labelsEnabled) { scope.launch { prefs.setAiLabelsEnabled(it) } }
+        SettingRow("استخراج النصوص (OCR)", ocrEnabled) { scope.launch { prefs.setAiOcrEnabled(it) } }
+        SettingRow("تجميع الصور حسب الوجوه", facesEnabled) { scope.launch { prefs.setAiFacesEnabled(it) } }
 
         if (!ocrAvailable) {
             Text(
@@ -84,19 +85,13 @@ fun AiPanelContent(
             )
         }
 
-        HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-        Text(
-            "Gemini السحابي",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
-        SwitchRow2("تفعيل التحليل السحابي (وصف وفواتير وOCR)", cloudEnabled) {
+        SubHead("Gemini السحابي")
+        SettingRow("تفعيل التحليل السحابي (وصف وفواتير وOCR)", cloudEnabled) {
             scope.launch { prefs.setGeminiCloudEnabled(it) }
         }
 
         if (cloudEnabled) {
-            SwitchRow2("استخدام نموذج ${GeminiRepository.MODEL_PRO} بدل ${GeminiRepository.MODEL_FLASH} الأرخص", usePro) {
+            SettingRow("استخدام نموذج ${GeminiRepository.MODEL_PRO} بدل ${GeminiRepository.MODEL_FLASH} الأرخص", usePro) {
                 scope.launch { prefs.setGeminiUsePro(it) }
             }
             Text(
@@ -105,23 +100,18 @@ fun AiPanelContent(
                 else
                     "المفتاح غير مضبوط — أنشئه من aistudio.google.com/apikey وضعه في local.properties باسم GEMINI_API_KEY ثم أعد البناء.",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (keyConfigured) MaterialTheme.colorScheme.primary
+                color = if (keyConfigured) TealBright
                 else MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 6.dp)
             )
             quota.let { q ->
-                Text(
-                    "استهلاك اليوم: ${q.used} من ${q.limit} استدعاء (يصفَّر كل يوم)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+                NoteSmall("استهلاك اليوم: ${q.used} من ${q.limit} استدعاء (يصفَّر كل يوم)", Modifier.padding(top = 4.dp))
             }
             Text(
                 "تُستدعى السحابة للصور الغامضة أو الثقة المنخفضة والمستندات فقط، " +
                     "ومحاولة واحدة لكل استدعاء لحماية حدك اليومي.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                color = Color.White.copy(alpha = 0.5f),
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
@@ -133,37 +123,17 @@ fun AiPanelContent(
             modifier = Modifier.padding(top = 12.dp)
         )
 
-        Button(onClick = { AiAnalysisScheduler.start(context) }, modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
-            Text("تشغيل التحليل الفوري")
-        }
-        OutlinedButton(
+        BtnFull("تشغيل التحليل الفوري", onClick = { AiAnalysisScheduler.start(context) }, modifier = Modifier.padding(top = 14.dp))
+        BtnOutline(
+            "إعادة تحليل كل الأرشيف",
             onClick = {
                 scope.launch {
                     repository.resetAiAnalysisForReanalyze()
                     AiAnalysisScheduler.start(context)
                 }
             },
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-        ) {
-            Text("إعادة تحليل كل الأرشيف")
-        }
-        OutlinedButton(
-            onClick = onOpenFaces,
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-        ) {
-            Icon(Icons.Filled.Face, contentDescription = null)
-            Text("مجموعات الوجوه (${groups.size})", modifier = Modifier.padding(start = 8.dp))
-        }
-    }
-}
-
-@Composable
-private fun SwitchRow2(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = checked, onCheckedChange = onChange)
+            modifier = Modifier.padding(top = 10.dp)
+        )
+        BtnOutline("مجموعات الوجوه (${groups.size})", onClick = onOpenFaces, modifier = Modifier.padding(top = 10.dp))
     }
 }

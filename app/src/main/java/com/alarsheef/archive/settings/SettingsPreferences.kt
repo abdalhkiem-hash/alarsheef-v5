@@ -51,6 +51,10 @@ class SettingsPreferences(private val context: Context) {
         val WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI = stringPreferencesKey("whatsapp_business_documents_tree_uri")
         /** معرّف شجرة SAF لمجلد التنزيلات. */
         val DOWNLOADS_TREE_URI = stringPreferencesKey("downloads_tree_uri")
+        /** قصّ حدود المستند تلقائيًا عند الاستيراد من المعرض (افتراضي مفعّل). */
+        val IMPORT_AUTO_CROP = booleanPreferencesKey("import_auto_crop")
+        /** تحسين الصورة تلقائيًا عند الاستيراد (تباين/إزالة ظل) — افتراضي مفعّل. */
+        val IMPORT_AUTO_ENHANCE = booleanPreferencesKey("import_auto_enhance")
     }
 
     val autoImport: Flow<Boolean> = context.appDataStore.data.map { it[Keys.AUTO_IMPORT] ?: true }
@@ -59,6 +63,8 @@ class SettingsPreferences(private val context: Context) {
     val sourceGallery: Flow<Boolean> = context.appDataStore.data.map { it[Keys.SOURCE_GALLERY] ?: true }
     val sourceDownloads: Flow<Boolean> = context.appDataStore.data.map { it[Keys.SOURCE_DOWNLOADS] ?: true }
     val importFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.IMPORT_FOLDER_URI] }
+    val importAutoCrop: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_CROP] ?: true }
+    val importAutoEnhance: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_ENHANCE] ?: true }
     val backupEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.BACKUP_ENABLED] ?: false }
     val backupFrequency: Flow<String> = context.appDataStore.data.map { it[Keys.BACKUP_FREQUENCY] ?: "daily" }
     val backupFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.BACKUP_FOLDER_URI] }
@@ -106,6 +112,8 @@ class SettingsPreferences(private val context: Context) {
     suspend fun setLastBackupAt(v: Long) { context.appDataStore.edit { it[Keys.LAST_BACKUP_AT] = v } }
     suspend fun setExcludePersonalPhotos(v: Boolean) { context.appDataStore.edit { it[Keys.EXCLUDE_PERSONAL_PHOTOS] = v } }
     suspend fun setDocumentsOnly(v: Boolean) { context.appDataStore.edit { it[Keys.DOCUMENTS_ONLY] = v } }
+    suspend fun setImportAutoCrop(v: Boolean) { context.appDataStore.edit { it[Keys.IMPORT_AUTO_CROP] = v } }
+    suspend fun setImportAutoEnhance(v: Boolean) { context.appDataStore.edit { it[Keys.IMPORT_AUTO_ENHANCE] = v } }
     suspend fun setLastScanAt(v: Long) { context.appDataStore.edit { it[Keys.LAST_SCAN_AT] = v } }
     suspend fun setAiOcrEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_OCR_ENABLED] = v } }
     suspend fun setAiLabelsEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_LABELS_ENABLED] = v } }

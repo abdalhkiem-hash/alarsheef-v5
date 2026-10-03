@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-enum class SourceApp { WHATSAPP, WHATSAPP_BUSINESS, GALLERY, DOWNLOADS, MANUAL_CAMERA, MANUAL_IMPORT }
+enum class SourceApp { WHATSAPP, WHATSAPP_BUSINESS, GALLERY, DOWNLOADS, MANUAL_CAMERA, MANUAL_IMPORT, DOCUMENT_SCAN }
 
 /**
  * كل عنصر بالأرشيف صورة — حتى لو أصله PDF (يتحوّل لصورة/صور وقت الاستيراد).

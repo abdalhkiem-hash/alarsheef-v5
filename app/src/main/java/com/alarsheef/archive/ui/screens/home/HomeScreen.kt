@@ -18,11 +18,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Menu
@@ -30,6 +33,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -39,7 +43,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -49,7 +52,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,13 +61,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.alarsheef.archive.data.entities.ArchivedImage
@@ -88,9 +93,12 @@ import com.alarsheef.archive.ui.components.NewFolderDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.components.SettingsPanelContent
 import com.alarsheef.archive.ui.components.rememberScopeSuggestions
+import com.alarsheef.archive.scanner.WorkScheduler
+import com.alarsheef.archive.ui.theme.Glass
 import com.alarsheef.archive.ui.theme.GlassBorder
 import com.alarsheef.archive.ui.theme.GlassStrong
 import com.alarsheef.archive.util.FileUtils
+import com.alarsheef.archive.work.AiAnalysisScheduler
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import java.io.File
@@ -141,7 +149,6 @@ fun HomeScreen(
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     var activePanel by remember { mutableStateOf<DrawerPanel?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var confirmDeleteYear by remember { mutableStateOf<Int?>(null) }
     var labelDialogScope by remember { mutableStateOf<String?>(null) }
@@ -278,6 +285,20 @@ when (target) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
+                if (activePanel != null) {
+                    CenterAlignedTopAppBar(
+                        title = { Text("") },
+                        navigationIcon = {
+                            IconButton(
+                                onClick = { activePanel = null },
+                                modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
+                    )
+                } else {
                 CenterAlignedTopAppBar(
                     title = { Text("الأرشيف") },
                     navigationIcon = {
@@ -299,9 +320,59 @@ when (target) {
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
                 )
+                }
             },
-            floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }) }
+            floatingActionButton = { if (activePanel == null) AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }) }
         ) { padding ->
+            if (activePanel != null) {
+                Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+                    when (activePanel) {
+                        DrawerPanel.SETTINGS -> SettingsPanelContent(
+                            prefs = settingsPrefs,
+                            scope = scope,
+                            onPickImportFolder = {
+                                pendingTreeTarget = "import"
+                                treeLauncher.launch(null)
+                            },
+                            onPickWhatsappDocs = {
+                                pendingTreeTarget = "whatsapp_docs"
+                                treeLauncher.launch(null)
+                            },
+                            onPickWhatsappBizDocs = {
+                                pendingTreeTarget = "whatsapp_biz_docs"
+                                treeLauncher.launch(null)
+                            },
+                            onPickDownloads = {
+                                pendingTreeTarget = "downloads"
+                                treeLauncher.launch(null)
+                            }
+                        )
+                        DrawerPanel.BACKUP -> BackupPanelContent(
+                            prefs = settingsPrefs,
+                            scope = scope,
+                            onPickBackupFolder = {
+                                pendingTreeTarget = "backup"
+                                treeLauncher.launch(null)
+                            }
+                        )
+                        DrawerPanel.EXPORT_IMPORT -> ExportImportPanelContent(
+                            onExport = {
+                                pendingExport = PendingExport.All
+                                exportLauncher.launch("alarsheef-archive.zip")
+                            },
+                            onImport = { importLauncher.launch(arrayOf("application/zip")) }
+                        )
+                        DrawerPanel.ABOUT -> AboutPanelContent()
+                        DrawerPanel.AI -> AiPanelContent(
+                            prefs = settingsPrefs,
+                            repository = repository,
+                            scope = scope,
+                            onOpenFaces = onOpenFaces
+                        )
+                        null -> {}
+                    }
+                }
+            } else {
             Column(modifier = Modifier.padding(padding)) {
                 SearchField(
                     query = query,
@@ -309,6 +380,30 @@ when (target) {
                     placeholder = "ابحث في كل الأرشيف...",
                     focusRequester = searchFieldFocus
                 )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    QuickActionBtn(
+                        icon = Icons.Filled.Sync,
+                        label = "فحص الآن يدويًا",
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            WorkScheduler.runOnce(context)
+                            scope.launch { snackbarHostState.showSnackbar("بدأ الفحص اليدوي — قد يستغرق دقيقة") }
+                        }
+                    )
+                    QuickActionBtn(
+                        icon = Icons.Filled.AutoAwesome,
+                        label = "تشغيل التحليل الفوري",
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            AiAnalysisScheduler.start(context)
+                            scope.launch { snackbarHostState.showSnackbar("بدأ التحليل الفوري في الخلفية") }
+                        }
+                    )
+                }
 
                 if (isSearching) {
                     SearchResultsList(results = searchResults, onOpenResult = onOpenImage)
@@ -330,14 +425,13 @@ when (target) {
                                 onOpenImage = onOpenImage
                             )
                         }
-                        if (years.size > 1) {
-                            item {
-                                Text(
-                                    "كل السنوات",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
+                        item {
+                            Text(
+                                "كل السنوات",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
                         }
                         items(years, key = { it.year }) { row ->
                             YearRowCard(
@@ -357,59 +451,6 @@ when (target) {
             }
         }
     }
-
-    if (activePanel != null) {
-        ModalBottomSheet(
-            onDismissRequest = { activePanel = null },
-            sheetState = sheetState,
-            containerColor = com.alarsheef.archive.ui.theme.GlassSheet
-        ) {
-            when (activePanel) {
-                 DrawerPanel.SETTINGS -> SettingsPanelContent(
-                     prefs = settingsPrefs,
-                     scope = scope,
-                     onPickImportFolder = {
-                         pendingTreeTarget = "import"
-                         treeLauncher.launch(null)
-                     },
-                      onPickWhatsappDocs = {
-                          pendingTreeTarget = "whatsapp_docs"
-                          treeLauncher.launch(null)
-                      },
-                      onPickWhatsappBizDocs = {
-                          pendingTreeTarget = "whatsapp_biz_docs"
-                          treeLauncher.launch(null)
-                      },
-                      onPickDownloads = {
-                         pendingTreeTarget = "downloads"
-                         treeLauncher.launch(null)
-                     }
-                 )
-                DrawerPanel.BACKUP -> BackupPanelContent(
-                    prefs = settingsPrefs,
-                    scope = scope,
-                    onPickBackupFolder = {
-                        pendingTreeTarget = "backup"
-                        treeLauncher.launch(null)
-                    }
-                )
-                DrawerPanel.EXPORT_IMPORT -> ExportImportPanelContent(
-                    onExport = {
-                        pendingExport = PendingExport.All
-                        exportLauncher.launch("alarsheef-archive.zip")
-                    },
-                    onImport = { importLauncher.launch(arrayOf("application/zip")) }
-                )
-                DrawerPanel.ABOUT -> AboutPanelContent()
-                DrawerPanel.AI -> AiPanelContent(
-                    prefs = settingsPrefs,
-                    repository = repository,
-                    scope = scope,
-                    onOpenFaces = onOpenFaces
-                )
-                null -> {}
-            }
-        }
     }
 
     confirmDeleteYear?.let { year ->
@@ -419,7 +460,6 @@ when (target) {
             onDismiss = { confirmDeleteYear = null }
         )
     }
-
     if (showExitDialog) {
         ConfirmExitDialog(
             onConfirm = {
@@ -450,6 +490,35 @@ when (target) {
 }
 
 @Composable
+private fun QuickActionBtn(
+    icon: ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Glass, RoundedCornerShape(14.dp))
+            .border(1.dp, GlassBorder, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 11.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(7.dp))
+        Text(
+            label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
 private fun YearRowCard(
     row: YearRow,
     onClick: () -> Unit,
@@ -459,15 +528,24 @@ private fun YearRowCard(
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    Card(
-        onClick = onClick,
+    Box(
         modifier = Modifier.fillMaxWidth()
-            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Glass, RoundedCornerShape(18.dp))
+            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(row.label ?: "${row.year}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                val subtitle = if (row.label != null) {
+                    "${row.year} · ${row.fileCount} ملف"
+                } else {
+                    "${row.fileCount} ملف · آخر نشاط: ${FileUtils.monthArabicName(row.latestMonth)}"
+                }
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+            }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
@@ -478,21 +556,6 @@ private fun YearRowCard(
                     DropdownMenuItem(text = { Text("تسمية مخصصة") }, onClick = { menuOpen = false; onLabel() })
                     DropdownMenuItem(text = { Text("حذف", color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; onDelete() })
                 }
-            }
-            Column(modifier = Modifier.padding(start = 4.dp).weight(1f)) {
-                Text(row.label ?: "${row.year}", style = MaterialTheme.typography.headlineMedium)
-                val subtitle = if (row.label != null) {
-                    "${row.year} · ${row.fileCount} ملف"
-                } else {
-                    "${row.fileCount} ملف · آخر نشاط: ${FileUtils.monthArabicName(row.latestMonth)}"
-                }
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-            }
-            Box(
-                modifier = Modifier.size(46.dp).background(GlassStrong, RoundedCornerShape(14.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.CalendarMonth, contentDescription = null, tint = Color.White)
             }
         }
     }
@@ -558,7 +621,8 @@ private fun HomeDashboard(
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
                     "${latestYear ?: FileUtils.today().first}",
-                    style = MaterialTheme.typography.displaySmall,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
                 Spacer(Modifier.height(6.dp))
@@ -606,7 +670,7 @@ private fun HomeDashboard(
                         contentDescription = img.fileName,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .size(88.dp)
+                            .size(80.dp)
                             .clip(RoundedCornerShape(18.dp))
                             .clickable { onOpenImage(img) }
                     )

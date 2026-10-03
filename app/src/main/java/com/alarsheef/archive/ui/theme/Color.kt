@@ -25,6 +25,7 @@ val Glass = Color(0x3DFFFFFF)      // 24% — بطاقة/سطح أساسي (حل
 val GlassStrong = Color(0x4DFFFFFF) // 30% — بلاطات أيقونات وشرائح علوية
 val GlassBorder = Color(0x59FFFFFF) // 35% — خيط شعري حدّي
 val GlassSheet = Color(0x66FFFFFF)  // 40% — ألواح منزلقة (قراءة أوضح فوق المحتوى)
+val GlassSoft = Color(0x2EFFFFFF)   // 18% — صفوف الإعدادات داخل اللوحات (كما في المعاينة)
 val AppBackground = Color.Transparent
 val Surface = Glass
 val TextPrimary = Color(0xFFFFFFFF)

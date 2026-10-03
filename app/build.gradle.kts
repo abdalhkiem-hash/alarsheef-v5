@@ -112,8 +112,14 @@ dependencies {
     // ML Kit Face Detection (on-device) — يستثني الصور الشخصية من السحب التلقائي
     implementation("com.google.mlkit:face-detection:16.1.6")
 
+    // ML Kit Document Scanner (Google Play services) — مسح المستندات بالحواف وتصحيح المنظور
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
+
     // DocumentFile — منتقي مجلدات SAF لمجلد الاستيراد المخصص والنسخ الاحتياطي
     implementation("androidx.documentfile:documentfile:1.0.1")
+
+    // ExifInterface — تطبيق اتجاه الدوران عند معالجة الصور المستوردة
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

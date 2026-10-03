@@ -8,11 +8,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,10 +23,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -271,19 +275,21 @@ fun FilesScreen(
                     Text(if (images.isEmpty()) "لا توجد ملفات في هذا اليوم" else "لا توجد نتائج")
                 }
             } else {
-                LazyColumn(
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, if (hasSelection) 90.dp else 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     itemsIndexed(filtered, key = { _, img -> img.id }) { index, img ->
-                        FileRow(
+                        GridTile(
                             image = img,
                             isSelected = selected.contains(img.id),
-                            onToggleSelect = { toggleSelect(img.id) },
                             onClick = {
                                 if (hasSelection) toggleSelect(img.id) else viewerIndex = index
-                            }
+                            },
+                            onLongClick = { toggleSelect(img.id) }
                         )
                     }
                 }
@@ -393,48 +399,66 @@ fun FilesScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FileRow(
+private fun GridTile(
     image: ArchivedImage,
     isSelected: Boolean,
-    onToggleSelect: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
-            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    Box(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(14.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .then(
+                if (isSelected) Modifier.border(2.dp, Color.White, RoundedCornerShape(14.dp))
+                else Modifier
+            )
     ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(46.dp)) {
-                AsyncImage(
-                    model = File(image.storedPath),
-                    contentDescription = image.fileName,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
-                )
-                if (image.receivedCount > 1) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .background(Amber, RoundedCornerShape(6.dp))
-                            .padding(horizontal = 4.dp),
-                    ) {
-                        Text("×${image.receivedCount}", color = Color.White, fontSize = MaterialTheme.typography.labelLarge.fontSize)
-                    }
-                }
+        AsyncImage(
+            model = File(image.storedPath),
+            contentDescription = image.fileName,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        // شريط اسم الملف أسفل البلاطة (خلفية داكنة خفيفة للتباين)
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.35f))
+                .padding(horizontal = 6.dp, vertical = 3.dp)
+        ) {
+            Text(
+                image.fileName,
+                color = Color.White.copy(alpha = 0.9f),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1
+            )
+        }
+        if (image.receivedCount > 1) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .background(Amber, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 4.dp),
+            ) {
+                Text("×${image.receivedCount}", color = Color.White, fontSize = MaterialTheme.typography.labelLarge.fontSize)
             }
-            Column(modifier = Modifier.padding(start = 10.dp).weight(1f)) {
-                Text(image.fileName, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                Text(
-                    "${sourceLabel(image)} · ${FileUtils.formatTime(image.importedAt)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+        }
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(4.dp)
+                    .size(22.dp)
+                    .background(TealBright, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
             }
-            androidx.compose.material3.Checkbox(checked = isSelected, onCheckedChange = { onToggleSelect() })
         }
     }
 }
@@ -446,6 +470,7 @@ private fun sourceLabel(image: ArchivedImage): String = when (image.sourceApp) {
     com.alarsheef.archive.data.entities.SourceApp.DOWNLOADS -> "من التنزيلات"
     com.alarsheef.archive.data.entities.SourceApp.MANUAL_CAMERA -> "التقاط صورة"
     com.alarsheef.archive.data.entities.SourceApp.MANUAL_IMPORT -> "استيراد يدوي"
+    com.alarsheef.archive.data.entities.SourceApp.DOCUMENT_SCAN -> "مسح مستند"
 }
 
 @Composable
