@@ -31,6 +31,7 @@ import androidx.core.content.ContextCompat
 import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.data.repository.ImportResult
+import com.alarsheef.archive.ui.components.DocumentScannerSaveDialog
 import com.alarsheef.archive.ui.components.MergePagesDialog
 import com.alarsheef.archive.ui.theme.TealDark
 import com.alarsheef.archive.util.FeatureFlags
@@ -55,6 +56,8 @@ fun AddFab(
     var menuExpanded by remember { mutableStateOf(false) }
     var pendingCaptureFile by remember { mutableStateOf<File?>(null) }
     var showMergeDialog by remember { mutableStateOf(false) }
+    var showScannerSaveDialog by remember { mutableStateOf(false) }
+    var scannedPageBitmaps by remember { mutableStateOf<List<android.graphics.Bitmap>>(emptyList()) }
 
     fun showResult(result: ImportResult, note: String? = null) {
         val baseMessage = when (result) {
@@ -96,6 +99,18 @@ fun AddFab(
         }
     }
 
+    val documentScannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && pendingCaptureFile != null) {
+            val file = pendingCaptureFile!!
+            pendingCaptureFile = null
+            val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+            if (bitmap != null) {
+                scannedPageBitmaps = listOf(bitmap)
+                showScannerSaveDialog = true
+            }
+        }
+    }
+
     Box {
         ExtendedFloatingActionButton(
             onClick = { menuExpanded = true },
@@ -126,6 +141,21 @@ fun AddFab(
                 onClick = {
                     menuExpanded = false
                     galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("مسح مستند") },
+                leadingIcon = { Icon(Icons.Filled.DocumentScanner, contentDescription = null) },
+                onClick = {
+                    menuExpanded = false
+                    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                    if (granted) {
+                        val (file, uri) = repository.createCameraCaptureTarget()
+                        pendingCaptureFile = file
+                        documentScannerLauncher.launch(uri)
+                    } else {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
                 }
             )
             if (FeatureFlags.SUB_FOLDERS_ENABLED) {
@@ -181,6 +211,64 @@ fun AddFab(
             initialMonth = mergePagesMonth,
             initialDay = mergePagesDay,
             onDismiss = { showMergeDialog = false }
+        )
+    }
+    if (showScannerSaveDialog) {
+        DocumentScannerSaveDialog(
+            pageBitmaps = scannedPageBitmaps,
+            onSave = { name, category, ocrText, secure ->
+                scope.launch {
+                    scannedPageBitmaps.forEach { bitmap ->
+                        val tempFile = File(context.cacheDir, "scan_${System.nanoTime()}.jpg")
+                        tempFile.outputStream().use { stream ->
+                            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, stream)
+                        }
+                        repository.importFile(tempFile, SourceApp.DOCUMENT_SCAN)
+                        tempFile.delete()
+                    }
+                    snackbarHostState.showSnackbar("تم حفظ ${scannedPageBitmaps.size} صفحة في أرشيف اليوم")
+                    com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
+                    scannedPageBitmaps = emptyList()
+                }
+            },
+            onExportPdf = { bitmaps, name ->
+                // TODO: Implement PDF export from scanner
+                scope.launch {
+                    val pdfFile = repository.mergeImagesToPdf(
+                        bitmaps.mapIndexed { index, bitmap ->
+                            val tempFile = File(context.cacheDir, "scan_${index}_${System.nanoTime()}.jpg")
+                            tempFile.outputStream().use { stream ->
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, stream)
+                            }
+                            com.alarsheef.archive.data.entities.ArchivedImage(
+                                id = 0,
+                                fileName = tempFile.name,
+                                storedPath = tempFile.absolutePath,
+                                contentHash = "",
+                                sourceApp = SourceApp.DOCUMENT_SCAN,
+                                receivedCount = 1,
+                                year = 0, month = 0, day = 0,
+                                importedAt = 0,
+                                capturedAt = 0,
+                                originalPath = null
+                            )
+                        }
+                    )
+                    if (pdfFile != null) {
+                        val uri = repository.getShareUriForFile(pdfFile)
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "application/pdf"
+                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(android.content.Intent.createChooser(intent, "مشاركة PDF"))
+                    }
+                }
+            },
+            onDismiss = {
+                scannedPageBitmaps = emptyList()
+                showScannerSaveDialog = false
+            }
         )
     }
 }
