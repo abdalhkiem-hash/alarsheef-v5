@@ -54,7 +54,7 @@ class Converters {
         DayGroup::class,
         AiCloudMeta::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -218,16 +218,65 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /** ترقية 8→9: إضافة عمود contentVerified للتحقق النصي من محتوى المستند */
+        /** ترقية 8→9: إضافة عمود contentVerified للتحقق النصي من محتوى المستند — إعادة إنشاء الجدول بنفس ترتيب أعمدة الكيان */
         val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE archived_images ADD COLUMN contentVerified INTEGER NOT NULL DEFAULT 0"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_archived_images_contentVerified " +
-                        "ON archived_images (contentVerified)"
-                )
+                db.execSQL("BEGIN TRANSACTION")
+                try {
+                    // 1. إنشاء جدول جديد بنفس ترتيب أعمدة الكيان بالضبط
+                    db.execSQL(
+                        "CREATE TABLE archived_images_new (" +
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "fileName TEXT NOT NULL, " +
+                            "storedPath TEXT NOT NULL, " +
+                            "contentHash TEXT NOT NULL, " +
+                            "sourceApp TEXT NOT NULL, " +
+                            "receivedCount INTEGER NOT NULL DEFAULT 1, " +
+                            "year INTEGER NOT NULL, " +
+                            "month INTEGER NOT NULL, " +
+                            "day INTEGER NOT NULL, " +
+                            "importedAt INTEGER NOT NULL, " +
+                            "capturedAt INTEGER NOT NULL, " +
+                            "originalPath TEXT, " +
+                            "aiAnalyzedAt INTEGER, " +
+                            "contentVerified INTEGER NOT NULL DEFAULT 0, " +
+                            "UNIQUE(contentHash))"
+                    )
+                    // 2. نسخ البيانات مع القيمة الافتراضية للعمود الجديد
+                    db.execSQL(
+                        "INSERT INTO archived_images_new (" +
+                            "id, fileName, storedPath, contentHash, sourceApp, receivedCount, " +
+                            "year, month, day, importedAt, capturedAt, originalPath, aiAnalyzedAt, contentVerified" +
+                            ") SELECT " +
+                            "id, fileName, storedPath, contentHash, sourceApp, receivedCount, " +
+                            "year, month, day, importedAt, capturedAt, originalPath, aiAnalyzedAt, 0 " +
+                            "FROM archived_images"
+                    )
+                    // 3. حذف الجدول القديم وإعادة تسمية الجديد
+                    db.execSQL("DROP TABLE archived_images")
+                    db.execSQL("ALTER TABLE archived_images_new RENAME TO archived_images")
+                    // 4. إعادة إنشاء الفهارس
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS index_archived_images_contentHash " +
+                            "ON archived_images (contentHash)"
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_archived_images_year_month_day " +
+                            "ON archived_images (year, month, day)"
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_archived_images_originalPath " +
+                            "ON archived_images (originalPath)"
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_archived_images_contentVerified " +
+                            "ON archived_images (contentVerified)"
+                    )
+                    db.execSQL("COMMIT")
+                } catch (e: Exception) {
+                    db.execSQL("ROLLBACK")
+                    throw e
+                }
             }
         }
 
@@ -243,6 +292,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                     MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
                 )
+                    .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
             }

@@ -1,12 +1,12 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 9,
-    "identityHash": "51f897beea31baf9d5a8e9bccfc76f26",
+    "version": 10,
+    "identityHash": "f297a67858c691c379632a8960d738d5",
     "entities": [
       {
         "tableName": "archived_images",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fileName` TEXT NOT NULL, `storedPath` TEXT NOT NULL, `contentHash` TEXT NOT NULL, `sourceApp` TEXT NOT NULL, `receivedCount` INTEGER NOT NULL, `year` INTEGER NOT NULL, `month` INTEGER NOT NULL, `day` INTEGER NOT NULL, `importedAt` INTEGER NOT NULL, `capturedAt` INTEGER NOT NULL, `originalPath` TEXT, `aiAnalyzedAt` INTEGER, `contentVerified` INTEGER NOT NULL DEFAULT 0)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fileName` TEXT NOT NULL, `storedPath` TEXT NOT NULL, `contentHash` TEXT NOT NULL, `sourceApp` TEXT NOT NULL, `receivedCount` INTEGER NOT NULL, `year` INTEGER NOT NULL, `month` INTEGER NOT NULL, `day` INTEGER NOT NULL, `importedAt` INTEGER NOT NULL, `capturedAt` INTEGER NOT NULL, `originalPath` TEXT, `aiAnalyzedAt` INTEGER, `contentVerified` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -90,8 +90,7 @@
             "fieldPath": "contentVerified",
             "columnName": "contentVerified",
             "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -515,7 +514,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '51f897beea31baf9d5a8e9bccfc76f26')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f297a67858c691c379632a8960d738d5')"
     ]
   }
 }
