@@ -232,7 +232,6 @@ fun AddFab(
                 }
             },
             onExportPdf = { bitmaps, name ->
-                // TODO: Implement PDF export from scanner
                 scope.launch {
                     val pdfFile = repository.mergeImagesToPdf(
                         bitmaps.mapIndexed { index, bitmap ->

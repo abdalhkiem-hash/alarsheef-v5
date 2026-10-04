@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -428,13 +429,33 @@ fun DocumentScannerSaveDialog(
         },
         confirmButton = {
             if (!loading) {
-                ConfirmButton("حفظ المستند ✓", onClick = {
-                    loading = true
-                    scope.launch {
-                        onSave(docName.trim().ifBlank { "مستند جديد" }, category, ocrText.trim(), secureFolder)
-                        onDismiss()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            loading = true
+                            scope.launch {
+                                onExportPdf(pageBitmaps, docName.trim().ifBlank { "مستند جديد" })
+                                onDismiss()
+                            }
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.2f), contentColor = Color.White),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("تصدير PDF", fontWeight = FontWeight.SemiBold)
                     }
-                })
+                    Box(modifier = Modifier.weight(1f)) {
+                        ConfirmButton("حفظ المستند ✓", onClick = {
+                            loading = true
+                            scope.launch {
+                                onSave(docName.trim().ifBlank { "مستند جديد" }, category, ocrText.trim(), secureFolder)
+                                onDismiss()
+                            }
+                        })
+                    }
+                }
             }
         },
         dismissButton = {
