@@ -9,15 +9,23 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -332,6 +340,107 @@ private fun ImportOptionRow(
             )
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DocumentScannerSaveDialog(
+    pageBitmaps: List<android.graphics.Bitmap>,
+    onSave: (name: String, category: String, ocrText: String, secure: Boolean) -> Unit,
+    onExportPdf: (pageBitmaps: List<android.graphics.Bitmap>, name: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var docName by remember { mutableStateOf("مستند جديد") }
+    var category by remember { mutableStateOf("مستند عام") }
+    var ocrText by remember { mutableStateOf("") }
+    var secureFolder by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+
+    val categories = listOf("مستند عام", "فاتورة", "إيصال أو حوالة", "عقد", "هوية", "ملاحظات")
+
+    AlertDialog(
+        onDismissRequest = { if (!loading) onDismiss() },
+        containerColor = DialogTeal,
+        shape = RoundedCornerShape(24.dp),
+        title = { DialogTitle("حفظ المستند الممسوح") },
+        text = {
+            Column(Modifier.padding(horizontal = 4.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = docName,
+                    onValueChange = { docName = it },
+                    label = { Text("اسم الملف", color = Color.White.copy(alpha = 0.7f)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = FieldColors()
+                )
+
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = { Text("التصنيف", color = Color.White.copy(alpha = 0.7f)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = FieldColors(),
+                    trailingIcon = { Icon(Icons.Filled.ExpandMore, contentDescription = null, tint = Color.White.copy(alpha = 0.7f)) }
+                )
+
+                OutlinedTextField(
+                    value = ocrText,
+                    onValueChange = { ocrText = it },
+                    label = { Text("النص المستخرج (OCR)", color = Color.White.copy(alpha = 0.7f)) },
+                    modifier = Modifier.fillMaxWidth().height(100.dp),
+                    colors = FieldColors(),
+                    maxLines = 6,
+                    singleLine = false
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = secureFolder,
+                        onCheckedChange = { secureFolder = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = Color.White,
+                            checkmarkColor = DialogTealText,
+                            uncheckedColor = Color.White.copy(alpha = 0.7f)
+                        )
+                    )
+                    Text("حفظ في المجلد الآمن 🔒", color = Color.White, fontSize = 14.sp)
+                }
+
+                if (loading) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(start = 12.dp))
+                        Text("جاري الحفظ...", color = Color.White, fontSize = 14.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (!loading) {
+                ConfirmButton("حفظ المستند ✓", onClick = {
+                    loading = true
+                    scope.launch {
+                        onSave(docName.trim().ifBlank { "مستند جديد" }, category, ocrText.trim(), secureFolder)
+                        onDismiss()
+                    }
+                })
+            }
+        },
+        dismissButton = {
+            DismissButton("إلغاء", onClick = { if (!loading) onDismiss() })
+        }
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
