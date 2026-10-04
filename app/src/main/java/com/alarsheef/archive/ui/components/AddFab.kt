@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarViewDay
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
@@ -155,6 +157,16 @@ fun showResult(result: ImportResult, note: String? = null) {
                     onClick = { menuExpanded = false; onImportZip() }
                 )
             }
-        }
-    }
+            DropdownMenuItem(
+                text = { Text("دمج عدة صفحات") },
+                leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
+                onClick = {
+                    menuExpanded = false
+                    scope.launch {
+                        snackbarHostState.showSnackbar("ميزة دمج الصفحات قيد التطوير، ستتوفر في تحديث قادم")
+                    }
+                }
+            )
+}
+}
 }
