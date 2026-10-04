@@ -5,17 +5,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -26,17 +28,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alarsheef.archive.data.repository.ArchiveRepository
+import kotlinx.coroutines.launch
 
 private val DialogTeal = Color(0xF20F766E)
 private val DialogTealText = Color(0xFF0F766E)
@@ -327,4 +332,115 @@ private fun ImportOptionRow(
             )
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MergePagesDialog(
+    repository: ArchiveRepository,
+    snackbarHostState: androidx.compose.material3.SnackbarHostState,
+    scope: kotlinx.coroutines.CoroutineScope,
+    initialYear: Int? = null,
+    initialMonth: Int? = null,
+    initialDay: Int? = null,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var selectedYear by remember { mutableStateOf(initialYear ?: java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) }
+    var selectedMonth by remember { mutableStateOf(initialMonth ?: java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) + 1) }
+    var selectedDay by remember { mutableStateOf(initialDay ?: java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH)) }
+    var loading by remember { mutableStateOf(false) }
+    var resultMessage by remember { mutableStateOf<String?>(null) }
+    var showResult by remember { mutableStateOf(false) }
+    val dialogScope = rememberCoroutineScope()
+
+    val years = repository.observeYearRows().collectAsStateWithLifecycle(initialValue = emptyList())
+    val months = repository.observeMonthRows(selectedYear).collectAsStateWithLifecycle(initialValue = emptyList())
+    val days = repository.observeDayRows(selectedYear, selectedMonth).collectAsStateWithLifecycle(initialValue = emptyList())
+
+    AlertDialog(
+        onDismissRequest = { if (!loading) onDismiss() },
+        containerColor = DialogTeal,
+        shape = RoundedCornerShape(24.dp),
+        title = { DialogTitle("دمج عدة صفحات في PDF") },
+        text = {
+            Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = selectedYear.toString(),
+                        onValueChange = { it.toIntOrNull()?.let { selectedYear = it; selectedMonth = 1; selectedDay = 1 } },
+                        label = { Text("السنة", color = Color.White.copy(alpha = 0.7f)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        colors = FieldColors()
+                    )
+                    androidx.compose.material3.OutlinedTextField(
+                        value = selectedMonth.toString(),
+                        onValueChange = { it.toIntOrNull()?.let { selectedMonth = it; selectedDay = 1 } },
+                        label = { Text("الشهر", color = Color.White.copy(alpha = 0.7f)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        colors = FieldColors()
+                    )
+                    androidx.compose.material3.OutlinedTextField(
+                        value = selectedDay.toString(),
+                        onValueChange = { it.toIntOrNull()?.let { selectedDay = it } },
+                        label = { Text("اليوم", color = Color.White.copy(alpha = 0.7f)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        colors = FieldColors()
+                    )
+                }
+                if (loading) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(start = 12.dp))
+                        Text("جاري إنشاء PDF...", color = Color.White, fontSize = 14.sp)
+                    }
+                }
+                resultMessage?.let { msg ->
+                    Text(msg, color = Color.White.copy(alpha = 0.9f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            if (!loading && !showResult) {
+                ConfirmButton("إنشاء PDF ومشاركة", onClick = {
+                    loading = true
+                    dialogScope.launch {
+                        val images = repository.byDayForExport(selectedYear, selectedMonth, selectedDay)
+                        if (images.isEmpty()) {
+                            loading = false
+                            resultMessage = "لا توجد صور في هذا اليوم"
+                            showResult = true
+                        } else {
+                            val pdfFile = repository.mergeImagesToPdf(images)
+                            loading = false
+                            if (pdfFile != null) {
+                                val uri = repository.getShareUriForFile(pdfFile)
+                                val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "application/pdf"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(intent, "مشاركة PDF"))
+                                resultMessage = "تم إنشاء PDF من ${images.size} صورة"
+                            } else {
+                                resultMessage = "تعذّر إنشاء PDF"
+                            }
+                            showResult = true
+                        }
+                    }
+                })
+            } else if (showResult) {
+                ConfirmButton("تم", onClick = { onDismiss() })
+            }
+        },
+        dismissButton = {
+            DismissButton("إلغاء", onClick = { if (!loading) onDismiss() })
+        }
+    )
 }

@@ -262,7 +262,10 @@ fun FilesScreen(
                     scope = scope,
                     onAddFolder = { showNewFolderDialog = true },
                     onExportAll = { pendingExportDay = day; exportLauncher.launch("alarsheef-$year-${FileUtils.twoDigits(month)}-${FileUtils.twoDigits(day)}.zip") },
-                    onImportZip = { importLauncher.launch(arrayOf("application/zip")) }
+                    onImportZip = { importLauncher.launch(arrayOf("application/zip")) },
+                    mergePagesYear = year,
+                    mergePagesMonth = month,
+                    mergePagesDay = day
                 )
             }
         }

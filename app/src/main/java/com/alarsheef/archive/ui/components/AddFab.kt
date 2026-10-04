@@ -31,6 +31,7 @@ import androidx.core.content.ContextCompat
 import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.data.repository.ImportResult
+import com.alarsheef.archive.ui.components.MergePagesDialog
 import com.alarsheef.archive.ui.theme.TealDark
 import com.alarsheef.archive.util.FeatureFlags
 import kotlinx.coroutines.CoroutineScope
@@ -45,27 +46,31 @@ fun AddFab(
     onAddFolder: () -> Unit,
     onAddDay: (() -> Unit)? = null,
     onExportAll: (() -> Unit)? = null,
-    onImportZip: (() -> Unit)? = null
+    onImportZip: (() -> Unit)? = null,
+    mergePagesYear: Int? = null,
+    mergePagesMonth: Int? = null,
+    mergePagesDay: Int? = null
 ) {
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
     var pendingCaptureFile by remember { mutableStateOf<File?>(null) }
+    var showMergeDialog by remember { mutableStateOf(false) }
 
-fun showResult(result: ImportResult, note: String? = null) {
-    val baseMessage = when (result) {
-        is ImportResult.Added -> "تمت الإضافة إلى الأرشيف"
-        is ImportResult.Duplicate -> "هذي الصورة موجودة من قبل — استُلمت ${result.newCount} مرات"
-        is ImportResult.Failed -> "تعذّر استيراد الملف"
-    }
-    val notePart = note ?: ""
-    val message = if (notePart.isNotEmpty()) "$baseMessage $notePart" else baseMessage
-    scope.launch {
-        snackbarHostState.showSnackbar(message)
-        if (result is ImportResult.Added) {
-            com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
+    fun showResult(result: ImportResult, note: String? = null) {
+        val baseMessage = when (result) {
+            is ImportResult.Added -> "تمت الإضافة إلى الأرشيف"
+            is ImportResult.Duplicate -> "هذي الصورة موجودة من قبل — استُلمت ${result.newCount} مرات"
+            is ImportResult.Failed -> "تعذّر استيراد الملف"
+        }
+        val notePart = note ?: ""
+        val message = if (notePart.isNotEmpty()) "$baseMessage $notePart" else baseMessage
+        scope.launch {
+            snackbarHostState.showSnackbar(message)
+            if (result is ImportResult.Added) {
+                com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
+            }
         }
     }
-}
 
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val file = pendingCaptureFile
@@ -162,11 +167,20 @@ fun showResult(result: ImportResult, note: String? = null) {
                 leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
                 onClick = {
                     menuExpanded = false
-                    scope.launch {
-                        snackbarHostState.showSnackbar("ميزة دمج الصفحات قيد التطوير، ستتوفر في تحديث قادم")
-                    }
+                    showMergeDialog = true
                 }
             )
-}
-}
+        }
+    }
+    if (showMergeDialog) {
+        MergePagesDialog(
+            repository = repository,
+            snackbarHostState = snackbarHostState,
+            scope = scope,
+            initialYear = mergePagesYear,
+            initialMonth = mergePagesMonth,
+            initialDay = mergePagesDay,
+            onDismiss = { showMergeDialog = false }
+        )
+    }
 }

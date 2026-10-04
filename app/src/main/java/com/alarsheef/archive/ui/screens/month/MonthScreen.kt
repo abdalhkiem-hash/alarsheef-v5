@@ -199,7 +199,7 @@ fun MonthScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
             )
         },
-        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }) }
+        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, mergePagesYear = year, mergePagesMonth = 1, mergePagesDay = 1) }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
             SearchField(query = query, onQueryChange = { query = it }, placeholder = "ابحث في أشهر $year...")

@@ -178,7 +178,7 @@ Scaffold(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
             )
         },
-        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, onAddDay = { showAddDayDialog = true }) }
+        floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, onAddDay = { showAddDayDialog = true }, mergePagesYear = year, mergePagesMonth = month, mergePagesDay = 1) }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
             SearchField(
