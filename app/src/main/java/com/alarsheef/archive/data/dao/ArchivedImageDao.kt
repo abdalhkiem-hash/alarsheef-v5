@@ -110,8 +110,14 @@ interface ArchivedImageDao {
     @Query("SELECT COUNT(*) FROM archived_images WHERE aiAnalyzedAt IS NULL")
     suspend fun pendingAiCountOnce(): Int
 
+    @Query("SELECT * FROM archived_images WHERE contentVerified = 2 ORDER BY importedAt DESC")
+    fun observePendingReviewImages(): Flow<List<ArchivedImage>>
+
     @Query("UPDATE archived_images SET aiAnalyzedAt = :time WHERE id = :id")
     suspend fun markAiAnalyzed(id: Long, time: Long)
+
+    @Query("UPDATE archived_images SET contentVerified = :status WHERE id = :id")
+    suspend fun updateContentVerified(id: Long, status: com.alarsheef.archive.data.entities.ContentVerified)
 
     @Query("UPDATE archived_images SET aiAnalyzedAt = NULL")
     suspend fun resetAiAnalysis()

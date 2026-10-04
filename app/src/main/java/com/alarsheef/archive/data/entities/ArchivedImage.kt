@@ -7,6 +7,17 @@ import androidx.room.PrimaryKey
 enum class SourceApp { WHATSAPP, WHATSAPP_BUSINESS, GALLERY, DOWNLOADS, MANUAL_CAMERA, MANUAL_IMPORT, DOCUMENT_SCAN }
 
 /**
+ * حالة التحقق النصي للمحتوى:
+ * 0 = UNVERIFIED (لم يتحقق بعد)
+ * 1 = ACCEPTED (مقبول نصياً)
+ * 2 = AMBIGUOUS (معلّق للمراجعة)
+ * 3 = REJECTED (مرفوض نصياً)
+ */
+enum class ContentVerified {
+    UNVERIFIED, ACCEPTED, AMBIGUOUS, REJECTED
+}
+
+/**
  * كل عنصر بالأرشيف صورة — حتى لو أصله PDF (يتحوّل لصورة/صور وقت الاستيراد).
  * contentHash: بصمة رقمية (SHA-256) لمحتوى الصورة الفعلي، تُستخدم لاكتشاف التكرار
  * عبر كامل الأرشيف بدل الاعتماد على اسم أو مسار الملف فقط.
@@ -51,5 +62,11 @@ data class ArchivedImage(
      * null يعني أنه لم يُحلَّل بعد؛ يُستخدم لمعالجة الواردات الجديدة فقط
      * دون إعادة تحليل الأرشيف كله كل يوم.
      */
-    val aiAnalyzedAt: Long? = null
+    val aiAnalyzedAt: Long? = null,
+
+    /**
+     * حالة التحقق النصي للمحتوى (0=غير متحقق، 1=مقبول، 2=معلّق، 3=مرفوض).
+     * يُحدَّث في AiAnalysisWorker بعد OCR عبر DocumentContentGate.verify().
+     */
+    val contentVerified: ContentVerified = ContentVerified.UNVERIFIED
 )

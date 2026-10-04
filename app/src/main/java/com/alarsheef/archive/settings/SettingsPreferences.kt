@@ -51,6 +51,8 @@ class SettingsPreferences(private val context: Context) {
         val WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI = stringPreferencesKey("whatsapp_business_documents_tree_uri")
         /** معرّف شجرة SAF لمجلد التنزيلات. */
         val DOWNLOADS_TREE_URI = stringPreferencesKey("downloads_tree_uri")
+        /** تفعيل التحقق النصي من محتوى المستند (افتراضي مفعّل). */
+        val CONTENT_VERIFICATION_ENABLED = booleanPreferencesKey("content_verification_enabled")
         /** قصّ حدود المستند تلقائيًا عند الاستيراد من المعرض (افتراضي مفعّل). */
         val IMPORT_AUTO_CROP = booleanPreferencesKey("import_auto_crop")
         /** تحسين الصورة تلقائيًا عند الاستيراد (تباين/إزالة ظل) — افتراضي مفعّل. */
@@ -65,6 +67,7 @@ class SettingsPreferences(private val context: Context) {
     val importFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.IMPORT_FOLDER_URI] }
     val importAutoCrop: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_CROP] ?: true }
     val importAutoEnhance: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_ENHANCE] ?: true }
+    val contentVerificationEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.CONTENT_VERIFICATION_ENABLED] ?: true }
     val backupEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.BACKUP_ENABLED] ?: false }
     val backupFrequency: Flow<String> = context.appDataStore.data.map { it[Keys.BACKUP_FREQUENCY] ?: "daily" }
     val backupFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.BACKUP_FOLDER_URI] }
@@ -116,6 +119,7 @@ class SettingsPreferences(private val context: Context) {
     suspend fun setImportAutoEnhance(v: Boolean) { context.appDataStore.edit { it[Keys.IMPORT_AUTO_ENHANCE] = v } }
     suspend fun setLastScanAt(v: Long) { context.appDataStore.edit { it[Keys.LAST_SCAN_AT] = v } }
     suspend fun setAiOcrEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_OCR_ENABLED] = v } }
+    suspend fun setContentVerificationEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.CONTENT_VERIFICATION_ENABLED] = v } }
     suspend fun setAiLabelsEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_LABELS_ENABLED] = v } }
     suspend fun setAiFacesEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_FACES_ENABLED] = v } }
     suspend fun setGeminiCloudEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.GEMINI_CLOUD_ENABLED] = v } }

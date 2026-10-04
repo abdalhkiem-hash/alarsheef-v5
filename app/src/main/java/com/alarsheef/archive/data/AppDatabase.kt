@@ -15,6 +15,7 @@ import com.alarsheef.archive.data.dao.DayGroupDao
 import com.alarsheef.archive.data.dao.SubFolderDao
 import com.alarsheef.archive.data.entities.AiCloudMeta
 import com.alarsheef.archive.data.entities.ArchivedImage
+import com.alarsheef.archive.data.entities.ContentVerified
 import com.alarsheef.archive.data.entities.CustomLabel
 import com.alarsheef.archive.data.entities.DayGroup
 import com.alarsheef.archive.data.entities.FaceGroup
@@ -32,6 +33,13 @@ class Converters {
     @TypeConverter
     fun toSourceApp(value: String): SourceApp =
         runCatching { SourceApp.valueOf(value) }.getOrDefault(SourceApp.MANUAL_IMPORT)
+
+    @TypeConverter
+    fun fromContentVerified(value: ContentVerified): Int = value.ordinal
+
+    @TypeConverter
+    fun toContentVerified(value: Int): ContentVerified =
+        ContentVerified.values().getOrNull(value) ?: ContentVerified.UNVERIFIED
 }
 
 @Database(
@@ -46,7 +54,7 @@ class Converters {
         DayGroup::class,
         AiCloudMeta::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -210,6 +218,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** ترقية 8→9: إضافة عمود contentVerified للتحقق النصي من محتوى المستند */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE archived_images ADD COLUMN contentVerified INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_archived_images_contentVerified " +
+                        "ON archived_images (contentVerified)"
+                )
+            }
+        }
+
         @Volatile private var INSTANCE: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase =
@@ -220,7 +241,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "arsheef.db"
                 ).addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                    MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                    MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
                 )
                     .build()
                     .also { INSTANCE = it }

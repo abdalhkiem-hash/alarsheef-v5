@@ -18,6 +18,7 @@ import com.alarsheef.archive.data.dao.DayGroupDao
 import com.alarsheef.archive.data.dao.SubFolderDao
 import com.alarsheef.archive.data.dao.YearSummary
 import com.alarsheef.archive.data.entities.ArchivedImage
+import com.alarsheef.archive.data.entities.ContentVerified
 import com.alarsheef.archive.data.entities.CustomLabel
 import com.alarsheef.archive.data.entities.DayGroup
 import com.alarsheef.archive.data.entities.SourceApp
@@ -482,9 +483,16 @@ class ArchiveRepository(context: Context) {
 
     suspend fun pendingAiCountOnce(): Int = imageDao.pendingAiCountOnce()
 
+    fun observePendingReviewImages(): Flow<List<ArchivedImage>> =
+        imageDao.observePendingReviewImages()
+
     suspend fun pendingAiImages(limit: Int) = imageDao.getPendingAiImages(limit)
 
     suspend fun markAiAnalyzed(id: Long) = imageDao.markAiAnalyzed(id, System.currentTimeMillis())
+
+    /** يُحدث حالة التحقق النصي للمحتوى (0=UNVERIFIED, 1=ACCEPTED, 2=AMBIGUOUS, 3=REJECTED) */
+    suspend fun updateContentVerified(id: Long, status: com.alarsheef.archive.data.entities.ContentVerified) =
+        imageDao.updateContentVerified(id, status)
 
     suspend fun resetAiAnalysisForReanalyze() = imageDao.resetAiAnalysis()
 
