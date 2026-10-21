@@ -285,6 +285,10 @@ when (target) {
                           settingsPrefs.setImportFolderUri(uri.toString())
                           WorkScheduler.runOnce(context)
                       }
+                      "w4bDocs" -> {
+                          settingsPrefs.setWhatsappBusinessDocumentsTreeUri(uri.toString())
+                          WorkScheduler.runOnce(context)
+                      }
                       "backup" -> {
                           settingsPrefs.setBackupFolderUri(uri.toString())
                           // النسخ مفعّل وكان ينتظر مجلدًا: يُجدوَل ويُنفَّذ الآن بدل انتظار إعادة فتح التطبيق
@@ -349,6 +353,10 @@ when (target) {
                             scope = scope,
                             onPickImportFolder = {
                                 pendingTreeTarget = "import"
+                                treeLauncher.launch(null)
+                            },
+                            onPickBusinessDocsFolder = {
+                                pendingTreeTarget = "w4bDocs"
                                 treeLauncher.launch(null)
                             }
                         )

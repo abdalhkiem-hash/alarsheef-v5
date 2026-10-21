@@ -166,10 +166,12 @@ fun SettingsPanelContent(
     repository: ArchiveRepository,
     scope: CoroutineScope,
     onPickImportFolder: () -> Unit,
+    onPickBusinessDocsFolder: () -> Unit,
 ) {
     val context = LocalContext.current
     val autoImport by prefs.autoImport.collectAsStateWithLifecycle(initialValue = true)
     val importFolderUri by prefs.importFolderUri.collectAsStateWithLifecycle(initialValue = null)
+    val businessDocsUri by prefs.whatsappBusinessDocumentsTreeUri.collectAsStateWithLifecycle(initialValue = null)
     val documentTypes by repository.observeDocumentTypes().collectAsStateWithLifecycle(initialValue = emptyList())
     var typeName by remember { mutableStateOf("") }
     var typeKeywords by remember { mutableStateOf("") }
@@ -204,6 +206,18 @@ fun SettingsPanelContent(
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.75f),
         )
+        BtnOutline(
+            if (businessDocsUri != null) "تغيير مجلد مستندات واتساب أعمال" else "اختيار مجلد مستندات واتساب أعمال",
+            onPickBusinessDocsFolder,
+            Modifier.padding(top = 8.dp)
+        )
+        NoteSmall(
+            if (businessDocsUri != null) {
+                "يُفحص هذا المجلد، ويُؤرشف ملف PDF الذي وصل اليوم فقط."
+            } else {
+                "مطلوب لملفات PDF لأن أندرويد يمنع قراءتها دون اختيار المجلد: Android › media › com.whatsapp.w4b › WhatsApp Business › Media › WhatsApp Business Documents."
+            }
+        )
         Spacer(Modifier.height(14.dp))
         SubHead("مجلد الإدخال")
         Text(
@@ -221,15 +235,7 @@ fun SettingsPanelContent(
         } else {
             NoteSmall("بلا مجلد يبقى الفحص على واتساب أعمال فقط.")
         }
-        Spacer(Modifier.height(14.dp))
-        BtnFull("فحص الآن", onClick = {
-            WorkScheduler.runOnce(context)
-            android.widget.Toast.makeText(
-                context,
-                "بدأ فحص واتساب أعمال",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
-        })
+        NoteSmall("الفحص اليدوي من زر «فحص الآن يدويًا» في الشاشة الرئيسية.")
 
         SubHead("نوع مستند جديد")
         Text(
