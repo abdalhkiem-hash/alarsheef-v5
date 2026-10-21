@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface DayGroupDao {
 
-    @Insert(onConflict = OnConflictStrategy.ABORT)
+    /** @return المعرّف الجديد، أو ‎-1 لو اليوم موجود مسبقًا (ABORT كان يُسقط التطبيق عند التكرار). */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(group: DayGroup): Long
 
     @Query("SELECT * FROM day_groups WHERE year = :year AND month = :month ORDER BY dayNumber ASC")

@@ -1,8 +1,6 @@
 package com.alarsheef.archive.scanner
 
-import android.content.Context
 import android.graphics.BitmapFactory
-import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
@@ -11,14 +9,21 @@ import java.io.File
 import kotlin.coroutines.resume
 
 /**
- * كاشف الوجوه يدعم ملفات محلية وصور MediaStore عبر content URI.
+ * كاشف الوجوه لملف صورة محلي (العامل ينسخ صور MediaStore للكاش أولًا).
  */
 object FaceDetectionUtil {
 
     private const val MAX_ANALYSIS_DIMENSION = 1024
 
+    /**
+     * أصغر وجه يُرصد كنسبة من عرض الصورة. الافتراضي في ML Kit 10% — وجوه الصور
+     * العائلية والجماعية أصغر من ذلك غالبًا فكانت تمرّ «بلا وجه» إلى العتبة الفضفاضة.
+     */
+    private const val MIN_FACE_SIZE = 0.05f
+
     private val options = FaceDetectorOptions.Builder()
         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+        .setMinFaceSize(MIN_FACE_SIZE)
         .build()
 
     private val detector by lazy { FaceDetection.getClient(options) }
@@ -41,16 +46,5 @@ object FaceDetectionUtil {
                 }
             } finally { bitmap.recycle() }
         } catch (e: Exception) { false } catch (e: OutOfMemoryError) { false }
-    }
-
-    /** true لو صورة MediaStore عبر content URI فيها وجه (تُنسخ مؤقتًا للتحليل). */
-    suspend fun hasFace(context: Context, uri: Uri): Boolean {
-        return try {
-            val temp = File(context.cacheDir, "face_${System.nanoTime()}.jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                temp.outputStream().use { output -> input.copyTo(output) }
-            } ?: return false
-            try { hasFace(temp) } finally { temp.delete() }
-        } catch (e: Exception) { false }
     }
 }

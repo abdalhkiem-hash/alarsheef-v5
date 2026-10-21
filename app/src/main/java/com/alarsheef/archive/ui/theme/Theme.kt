@@ -4,7 +4,7 @@ import android.app.Activity
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
@@ -13,19 +13,25 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
-// نمط زجاجي متدرّج: أسطح شفافة بيضاء + نصوص بيضاء فوق تدرّج تركوازي–نيلي
-private val LightColors = lightColorScheme(
-    primary = TealBright,
-    onPrimary = Color(0xFF06231F),
+// ثيم داكن زجاجي: أسطح بيضاء شفافة + نصوص بيضاء فوق تدرّج كحلي–تركوازي داكن.
+// surfaceContainer* معتمة ليظهر DropdownMenu وغيره داكنًا بدل رمادي Material الافتراضي.
+private val DarkColors = darkColorScheme(
+    primary = Accent,
+    onPrimary = OnAccent,
     primaryContainer = GlassStrong,
     onPrimaryContainer = Color.White,
     secondary = Amber,
-    onSecondary = Color.White,
+    onSecondary = Color(0xFF2A1700),
     secondaryContainer = Color(0x40F0A63A),
     onSecondaryContainer = Color.White,
     background = AppBackground,
     surface = Surface,
     surfaceVariant = SurfaceTinted,
+    surfaceContainerLowest = PanelSurface,
+    surfaceContainerLow = PanelSurface,
+    surfaceContainer = PanelSurface,
+    surfaceContainerHigh = PanelSurface,
+    surfaceContainerHighest = PanelSurface,
     onBackground = TextPrimary,
     onSurface = TextPrimary,
     onSurfaceVariant = TextMuted,
@@ -34,6 +40,14 @@ private val LightColors = lightColorScheme(
     error = ErrorRed,
     onError = Color(0xFF3B0A06)
 )
+
+/** سلّم الزوايا الموحّد — استخدمه بدل الأرقام المتفرقة. */
+object Radius {
+    val Hero = 24.dp      // بطاقة البطل، الحوارات
+    val Row = 18.dp       // الصفوف والبطاقات والقوائم
+    val Control = 14.dp   // الأزرار، الرقاقات، البلاطات
+    val Small = 10.dp     // العناصر الصغيرة
+}
 
 // أشكال عصرية مستديرة الملامح — تُطبَّق تلقائيًا على كل Card/Dialog عبر MaterialTheme
 val ArsheefShapes = Shapes(
@@ -59,7 +73,7 @@ fun ArsheefTheme(content: @Composable () -> Unit) {
     }
 
     MaterialTheme(
-        colorScheme = LightColors,
+        colorScheme = DarkColors,
         typography = ArsheefTypography,
         shapes = ArsheefShapes,
         content = content

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SwapVert
@@ -37,11 +38,15 @@ import com.alarsheef.archive.ui.theme.GlassStrong
 enum class DrawerPanel { SETTINGS, EXPORT_IMPORT, BACKUP, ABOUT, AI }
 
 @Composable
-fun ArsheefDrawerContent(onSelect: (DrawerPanel) -> Unit) {
+fun ArsheefDrawerContent(
+    pendingCount: Int = 0,
+    onOpenPending: () -> Unit = {},
+    onSelect: (DrawerPanel) -> Unit
+) {
     ModalDrawerSheet(
         drawerContainerColor = Color.Transparent,
         modifier = Modifier.background(
-            Brush.verticalGradient(listOf(Color(0xFF0F766E), Color(0xFF12A5A0), Color(0xFF149AA0)))
+            Brush.verticalGradient(listOf(com.alarsheef.archive.ui.theme.GradientStart, com.alarsheef.archive.ui.theme.GradientMid, com.alarsheef.archive.ui.theme.GradientEnd))
         )
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp)) {
@@ -61,6 +66,10 @@ fun ArsheefDrawerContent(onSelect: (DrawerPanel) -> Unit) {
             ) {
                 Text("إصدار 5.0.0", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
             }
+            DrawerRow(
+                Icons.Filled.Check,
+                if (pendingCount > 0) "قيد المراجعة ($pendingCount)" else "قيد المراجعة"
+            ) { onOpenPending() }
             DrawerRow(Icons.Filled.Tune, "الإعدادات") { onSelect(DrawerPanel.SETTINGS) }
             DrawerRow(Icons.Filled.SwapVert, "تصدير / استيراد الأرشيف") { onSelect(DrawerPanel.EXPORT_IMPORT) }
             DrawerRow(Icons.Filled.Archive, "النسخة الاحتياطية") { onSelect(DrawerPanel.BACKUP) }

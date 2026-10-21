@@ -4,7 +4,6 @@
 
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <!-- أندرويد 12L فأقدم: تغطي الصور وملفات PDF في MediaStore (بحد أقصى 32؛
          على 33+ تستبدلها READ_MEDIA_* ويُعتمد على SAF للـPDF) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -12,6 +11,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Gemini السحابي: استدعاءات generateContent عبر HTTPS فقط -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- صلاحية عادية يمنحها النظام عند التثبيت: قواعد لغة OCR المدمجة في سامسونج -->
+    <uses-permission android:name="com.samsung.android.sdk.ocr.permission.PROVIDE_OCR_RESOURCE" />
 
     <application
         android:name=".ArsheefApplication"

@@ -14,4 +14,5 @@ sealed class Screen(val route: String) {
             "files/$year/$month/$day?openImageId=$openImageId"
     }
     data object Faces : Screen("faces")
+    data object Pending : Screen("pending")
 }

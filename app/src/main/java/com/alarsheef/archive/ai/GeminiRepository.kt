@@ -6,10 +6,14 @@ import android.util.Base64
 import android.util.Log
 import com.alarsheef.archive.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.max
@@ -41,13 +45,34 @@ object GeminiRepository {
      * true بعد أول استجابة 429 — تجاوز حدّ Google الفوري (RPM/يومي).
      * يقرأه العامل كي يتوقّف عن استهلاك حصّته اليومية على نداءات مصيرها الفشل.
      */
-    @Volatile
-    var rateLimited: Boolean = false
-        private set
+    val rateLimited: Boolean
+        get() = System.currentTimeMillis() < rateLimitedUntil
 
-    /** يُستدعى في بداية كل دفعة تحليل. */
+    /**
+     * نهاية التهدئة. تبقى حتى تنقضي حتى لو بدأت دفعة تحليل جديدة،
+     * وإلا كان خطأ 503 يُعاد ضربه على كل صورة.
+     */
+    @Volatile
+    private var rateLimitedUntil: Long = 0L
+
+    private val pauseUntil = MutableStateFlow(0L)
+
+    /** تقرأه الشاشة الرئيسية لإظهار «التسمية السحابية متوقفة مؤقتًا». */
+    val cloudPauseUntil: StateFlow<Long> = pauseUntil.asStateFlow()
+
+    /** لا تُمسح تهدئة ما زالت سارية. */
     fun resetRateLimit() {
-        rateLimited = false
+        if (rateLimited) return
+        rateLimitedUntil = 0L
+        if (pauseUntil.value != 0L) pauseUntil.value = 0L
+    }
+
+    private fun pauseFor(httpCode: Int?, networkFailed: Boolean) {
+        val cooldown = GeminiCallPolicy.cooldownMs(httpCode, networkFailed)
+        if (cooldown <= 0L) return
+        val until = System.currentTimeMillis() + cooldown
+        if (until > rateLimitedUntil) rateLimitedUntil = until
+        if (until > pauseUntil.value) pauseUntil.value = until
     }
 
     private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -112,8 +137,7 @@ object GeminiRepository {
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 if (code !in 200..299) {
-                    // 429 = تجاوز حدّ Google — نوقف كل النداءات اللاحقة في هذه الدفعة
-                    if (code == 429) rateLimited = true
+                    pauseFor(code, networkFailed = false)
                     Log.w(TAG, "HTTP $code من Gemini: ${response.take(300)}")
                     return@withContext null
                 }
@@ -121,6 +145,10 @@ object GeminiRepository {
             } finally {
                 connection.disconnect()
             }
+        } catch (e: IOException) {
+            pauseFor(httpCode = null, networkFailed = true)
+            Log.w(TAG, "انقطع الاتصال بـ Gemini: ${e.javaClass.simpleName}: ${e.message}")
+            null
         } catch (e: Exception) {
             Log.w(TAG, "فشل استدعاء Gemini: ${e.javaClass.simpleName}: ${e.message}")
             null

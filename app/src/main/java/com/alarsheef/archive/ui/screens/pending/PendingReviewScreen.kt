@@ -1,5 +1,6 @@
 package com.alarsheef.archive.ui.screens.pending
 
+import com.alarsheef.archive.ui.components.GlassTopBar
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -62,6 +63,7 @@ import com.alarsheef.archive.data.entities.ContentVerified
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.settings.SettingsPreferences
 import com.alarsheef.archive.ui.components.AddFab
+import com.alarsheef.archive.ui.components.ConfirmDeleteDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.theme.Glass
 import com.alarsheef.archive.ui.theme.GlassBorder
@@ -92,18 +94,7 @@ fun PendingReviewScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("مراجعة المعلقة (${filtered.size})") },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
-            )
+            GlassTopBar(title = "مراجعة المعلقة (${filtered.size})", onBack = onBack)
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -139,23 +130,15 @@ fun PendingReviewScreen(
 
     if (showDeleteDialog) {
         deleteImage?.let { img ->
-            AlertDialog(
-                onDismissRequest = { showDeleteDialog = false; deleteImage = null },
-                title = { Text("تأكيد الحذف") },
-                text = { Text("حذف \"${img.fileName}\" نهائيًا؟") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        scope.launch {
-                            repository.deleteImages(listOf(img))
-                            snackbarHostState.showSnackbar("تم الحذف")
-                            showDeleteDialog = false
-                            deleteImage = null
-                        }
-                    }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+            ConfirmDeleteDialog(
+                message = "حذف \"${img.fileName}\" نهائيًا؟",
+                onConfirm = {
+                    scope.launch {
+                        repository.deleteImages(listOf(img))
+                        snackbarHostState.showSnackbar("تم الحذف")
+                    }
                 },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteDialog = false; deleteImage = null }) { Text("إلغاء") }
-                }
+                onDismiss = { showDeleteDialog = false; deleteImage = null }
             )
         }
     }
@@ -169,6 +152,7 @@ private fun PendingReviewCard(
     scope: kotlinx.coroutines.CoroutineScope,
     onDelete: (ArchivedImage) -> Unit
 ) {
+    val context = LocalContext.current
     val statusText = when (image.contentVerified) {
         com.alarsheef.archive.data.entities.ContentVerified.AMBIGUOUS -> "معلّق للمراجعة"
         com.alarsheef.archive.data.entities.ContentVerified.REJECTED -> "مرفوض نصياً"
@@ -182,13 +166,13 @@ private fun PendingReviewCard(
         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
     }
 
-    Card(
+    // نمط الصف الزجاجي الموحّد (لا Card بظل: كان يظهر «بلاطة فاتحة داخلية» فوق الشفافية)
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, GlassBorder, RoundedCornerShape(14.dp)),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Glass, contentColor = MaterialTheme.colorScheme.onSurface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            .clip(RoundedCornerShape(18.dp))
+            .background(Glass)
+            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -214,12 +198,14 @@ private fun PendingReviewCard(
                     onClick = {
                         scope.launch {
                             repository.updateContentVerified(image.id, com.alarsheef.archive.data.entities.ContentVerified.ACCEPTED)
+                            // المعلّق لا يُحلَّل قبل حسمه — يبدأ تحليله (تصنيف/OCR/تسمية) عند القبول
+                            com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
                             snackbarHostState.showSnackbar("تم القبول")
                         }
                     },
                     modifier = Modifier.background(TealBright, RoundedCornerShape(10.dp)).padding(8.dp)
                 ) {
-                    Icon(Icons.Filled.Check, contentDescription = "قبول", tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Check, contentDescription = "قبول", tint = com.alarsheef.archive.ui.theme.OnAccent, modifier = Modifier.size(20.dp))
                 }
                 IconButton(
                     onClick = {
@@ -230,7 +216,7 @@ private fun PendingReviewCard(
                     },
                     modifier = Modifier.background(MaterialTheme.colorScheme.error, RoundedCornerShape(10.dp)).padding(8.dp)
                 ) {
-                    Icon(Icons.Filled.Close, contentDescription = "رفض", tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Filled.Close, contentDescription = "رفض", tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(20.dp))
                 }
             }
         }

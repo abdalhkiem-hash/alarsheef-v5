@@ -12,6 +12,18 @@ import kotlin.math.sqrt
 /** وسم تلقائي: اسم + درجة ثقة 0..1 */
 data class ClassifiedLabel(val label: String, val confidence: Float)
 
+/** قوة الدليل الشكلي على أن الصورة مستند — من الأقوى إلى المعدوم. */
+enum class DocumentShape {
+    /** ورقة/مستند نصي واضح: تشبّع منخفض + حواف كثيفة + تباين واسع. */
+    DOCUMENT,
+    /** ألوان مسطّحة وحواف ضعيفة — لقطة شاشة، لكن صورة شخصية ناعمة الخلفية تطابقه أيضًا. */
+    SCREENSHOT,
+    /** لا وسم واضح؛ نجحت في العتبة الفضفاضة فقط. */
+    PLAUSIBLE,
+    /** منظر طبيعي، أو لا شيء يوحي بمستند، أو تعذّر فك الصورة. */
+    NOT_DOCUMENT,
+}
+
 /**
  * مصنّف محتوى الصورة يعمل كليًا على الجهاز بدون أي تبعية خارجية.
  * يعتمد على خصائص كلاسيكية مُستخرجة من الصورة (درجة الحدة، التشبّع، السطوع،
@@ -40,25 +52,31 @@ object SmartClassifier {
     }
 
     /**
-     * قرار الاستيراد في بوابة المحتوى: هل تبدو الصورة مستندًا (فاتورة/إيصال/
-     * حركة بنكية/لقطة شاشة تطبيق صرافة) بدل صورة عائلية أو منظر طبيعي؟
+     * شكل الصورة لبوابة الاستيراد: إلى أي حد تبدو مستندًا (فاتورة/إيصال/حركة
+     * بنكية/لقطة شاشة تطبيق صرافة) بدل صورة عائلية أو منظر طبيعي؟
+     *
+     * يعيد **قوة الدليل** لا قرار قبول: القرار (مع الوجه والدليل النصي) في
+     * [com.alarsheef.archive.scanner.ImportGate]. كانت هذه الدالة تعيد true/false
+     * فتُقبل أي صورة «ناعمة» بوسم لقطة شاشة حتى مع وجه — منها صور شخصية كثيرة.
      *
      * الترتيب (يشفّر الملف مرة واحدة فقط ويعيد استخدام الإحصائيات):
-     * 1. وسم طبيعة/سماء → مرفوض (مناظر تُرفض مهما تشابهت مع لقطة شاشة).
-     * 2. وسم مستند أو لقطة شاشة → مقبول **حتى لو وُجد وجه** (هوية/جواز/
-     *    فاتورة باسم شخص — المستند أقوى من الوجه).
-     * 3. وجود وجه → مرفوض (صورة عائلية/شخصية غير مستندية).
-     * 4. غامض → العتبة الفضفاضة على الإحصائيات نفسها.
+     * 1. وسم طبيعة/سماء → [DocumentShape.NOT_DOCUMENT] (مناظر مهما تشابهت مع لقطة شاشة).
+     * 2. وسم مستند (تشبّع منخفض + حواف كثيفة + تباين واسع) → [DocumentShape.DOCUMENT].
+     * 3. وسم لقطة شاشة (حواف ضعيفة فقط — دليل فضفاض) → [DocumentShape.SCREENSHOT].
+     * 4. العتبة الفضفاضة على الإحصائيات → [DocumentShape.PLAUSIBLE]، وإلا NOT_DOCUMENT.
      */
-    fun isDocumentLike(file: File, facesDetected: Int): Boolean {
-        val bitmap = decodeSampled(file) ?: return false
+    fun documentShape(file: File, facesDetected: Int): DocumentShape {
+        val bitmap = decodeSampled(file) ?: return DocumentShape.NOT_DOCUMENT
         try {
             val s = computeStats(bitmap)
             val labels = classifyFromStats(s, facesDetected).map { it.label }.toSet()
-            if ("طبيعة / حديقة" in labels || "سماء / ماء" in labels) return false
-            if ("مستند / ملف نصي" in labels || "لقطة شاشة" in labels) return true
-            if (facesDetected > 0) return false
-            return s.meanSat < 0.45f && s.edgeMean > 10.0 && (s.maxLum - s.minLum) > 100.0
+            return when {
+                "طبيعة / حديقة" in labels || "سماء / ماء" in labels -> DocumentShape.NOT_DOCUMENT
+                "مستند / ملف نصي" in labels -> DocumentShape.DOCUMENT
+                "لقطة شاشة" in labels -> DocumentShape.SCREENSHOT
+                s.meanSat < 0.45f && s.edgeMean > 10.0 && (s.maxLum - s.minLum) > 100.0 -> DocumentShape.PLAUSIBLE
+                else -> DocumentShape.NOT_DOCUMENT
+            }
         } finally {
             bitmap.recycle()
         }

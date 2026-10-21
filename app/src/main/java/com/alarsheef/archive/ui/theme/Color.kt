@@ -2,34 +2,44 @@ package com.alarsheef.archive.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// الهوية البصرية المعتمدة: تركوازي أساسي + كهرماني للتمييز والحيوية
-val Teal = Color(0xFF12A594)
-val TealDark = Color(0xFF0C7F72)
-val TealLight = Color(0xFFE3F5F2)
-val Amber = Color(0xFFF0A63A)
-val AmberDark = Color(0xFFC97F1F)
+// الثيم الداكن المعتمد (2/10/2026): تدرّج كحلي–تركوازي داكن + زجاج خافت + لمسة سماوية.
+// كل الشاشات تقرأ من هذه الرموز، فتغيير القيم هنا يغيّر التطبيق كله. نسب التباين
+// المقاسة: نص أبيض فوق الزجاج 12.8–13.7:1 (رئيسي) و7.1–7.5:1 (ثانوي).
 
-// تركوازي مضيء للعناصر الصغيرة فوق التدرّج (روابط/أزرار/مؤشرات)
-val TealBright = Color(0xFF2DD4BF)
+// علامات (شارات الصور وغيرها) — لم تتغير
+val Teal = Color(0xFF12A594)
+val Amber = Color(0xFFF0A63A)
+
+// اللون المميّز فوق الداكن: أيقونات/أزرار/مؤشرات. والنص فوقه OnAccent (كحلي داكن).
+val TealBright = Color(0xFF5EEAD4)
+val Accent = TealBright
+val OnAccent = Color(0xFF04252C)
 val Mint = Color(0xFFE6FFFB)
 
-// تدرّج الخلفية الرئيسي (نمط زجاجي متدرّج معتمد من مخطط B)
-val GradientStart = Color(0xFF0F766E)
-val GradientMid = Color(0xFF12A5A0)
-val GradientEnd = Color(0xFF4F46E5)
-val GlowCyan = Color(0xFF2DD4BF)
-val GlowIndigo = Color(0xFF8B5CF6)
+// تدرّج الخلفية الرئيسي + كرات الضوء
+val GradientStart = Color(0xFF031F26)
+val GradientMid = Color(0xFF07223F)
+val GradientEnd = Color(0xFF1A1858)
+val GlowCyan = Color(0xFF22D3EE)
+val GlowIndigo = Color(0xFF7C3AED)
 
-// زجاج: أسطح شفافة + خيوط بيضاء شعرية + نصوص بيضاء (كثافات مطابقة للمعاينة B)
-val Glass = Color(0x3DFFFFFF)      // 24% — بطاقة/سطح أساسي (حليبي مثل المعاينة)
-val GlassStrong = Color(0x4DFFFFFF) // 30% — بلاطات أيقونات وشرائح علوية
-val GlassBorder = Color(0x59FFFFFF) // 35% — خيط شعري حدّي
-val GlassSheet = Color(0x66FFFFFF)  // 40% — ألواح منزلقة (قراءة أوضح فوق المحتوى)
-val GlassSoft = Color(0x2EFFFFFF)   // 18% — صفوف الإعدادات داخل اللوحات (كما في المعاينة)
+// زجاج: أسطح بيضاء شديدة الشفافية فوق خلفية داكنة + خيط شعري
+val GlassSoft = Color(0x0FFFFFFF)   // 6%  — صفوف الإعدادات داخل اللوحات
+val Glass = Color(0x14FFFFFF)       // 8%  — بطاقة/صف أساسي
+val GlassStrong = Color(0x1AFFFFFF) // 10% — بلاطات أيقونات وشرائح علوية
+val GlassBorder = Color(0x29FFFFFF) // 16% — خيط حدّي
+val GlassSheet = Color(0xF20B2540)  // لوح شبه معتم (قوائم/ألواح تحتاج قراءة فوق محتوى)
+val PanelSurface = Color(0xF2082A36) // حوارات وقوائم منسدلة
 val AppBackground = Color.Transparent
 val Surface = Glass
 val TextPrimary = Color(0xFFFFFFFF)
-val ErrorRed = Color(0xFFFF6B6B)
-val TextMuted = Color(0xB3FFFFFF)  // 70% — نص ثانوي
-val OutlineSoft = Color(0x4DFFFFFF)
-val SurfaceTinted = Color(0x1AFFFFFF) // 10%
+val ErrorRed = Color(0xFFFF8A8A)
+val TextMuted = Color(0xB8FFFFFF)   // 72% — نص ثانوي
+val OutlineSoft = Color(0x29FFFFFF)
+val SurfaceTinted = Color(0x0FFFFFFF)
+
+// شارات أنواع الملفات (ثابتة الدلالة: أحمر PDF، أزرق مستند نصي، أخضر جدول)
+val BadgePdf = Color(0xFFD9362B)
+val BadgeDoc = Color(0xFF2563EB)
+val BadgeSheet = Color(0xFF16A34A)
+val BadgeOther = Color(0xFF64748B)

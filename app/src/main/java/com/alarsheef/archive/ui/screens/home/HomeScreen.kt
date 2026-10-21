@@ -1,5 +1,18 @@
 package com.alarsheef.archive.ui.screens.home
 
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import com.alarsheef.archive.ui.components.GlassIconButton
+import com.alarsheef.archive.ui.components.GlassPanel
+import com.alarsheef.archive.ui.components.GlassTopBar
+import com.alarsheef.archive.ui.components.IconTile
+import com.alarsheef.archive.ai.GeminiRepository
+import com.alarsheef.archive.ui.theme.Accent
+import com.alarsheef.archive.ui.theme.OnAccent
+import com.alarsheef.archive.ui.theme.Radius
+import com.alarsheef.archive.ui.theme.TextMuted
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -100,6 +113,7 @@ import com.alarsheef.archive.ui.theme.GlassStrong
 import com.alarsheef.archive.util.FileUtils
 import com.alarsheef.archive.work.AiAnalysisScheduler
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -114,15 +128,23 @@ fun HomeScreen(
     repository: ArchiveRepository,
     onOpenYear: (Int) -> Unit,
     onOpenImage: (ArchivedImage) -> Unit,
-    onOpenFaces: () -> Unit
+    onOpenFaces: () -> Unit,
+    onOpenPending: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settingsPrefs = remember { SettingsPreferences(context) }
     val porter = remember { ArchivePorter(context, repository) }
 
-    val years by repository.observeYearRows().collectAsStateWithLifecycle(initialValue = emptyList())
+    val cloudPauseUntil by GeminiRepository.cloudPauseUntil.collectAsStateWithLifecycle()
+    val cloudPaused = cloudPauseUntil > System.currentTimeMillis()
+
+    val years by remember { repository.observeYearRows() }.collectAsStateWithLifecycle(initialValue = emptyList())
     val latestYear = years.firstOrNull()?.year
+    val pendingImages by remember { repository.observePendingReviewImages() }
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val pendingCount = pendingImages.size
+    var yearsExpanded by remember { mutableStateOf(true) }
 
     val dashboardStats by remember(latestYear) {
         latestYear?.let { repository.observeDashboardStats(it) }
@@ -259,14 +281,18 @@ fun HomeScreen(
             }
             scope.launch {
 when (target) {
-                      "import" -> settingsPrefs.setImportFolderUri(uri.toString())
-                      "backup" -> settingsPrefs.setBackupFolderUri(uri.toString())
-                      "whatsapp_images" -> settingsPrefs.setWhatsappImagesTreeUri(uri.toString())
-                      "whatsapp_docs" -> settingsPrefs.setWhatsappDocumentsTreeUri(uri.toString())
-                      "whatsapp_biz_images" -> settingsPrefs.setWhatsappBusinessImagesTreeUri(uri.toString())
-                      "whatsapp_biz_docs" -> settingsPrefs.setWhatsappBusinessDocumentsTreeUri(uri.toString())
-                      "downloads" -> settingsPrefs.setDownloadsTreeUri(uri.toString())
-                      "import_custom" -> settingsPrefs.setImportFolderUri(uri.toString())
+                      "import" -> {
+                          settingsPrefs.setImportFolderUri(uri.toString())
+                          WorkScheduler.runOnce(context)
+                      }
+                      "backup" -> {
+                          settingsPrefs.setBackupFolderUri(uri.toString())
+                          // النسخ مفعّل وكان ينتظر مجلدًا: يُجدوَل ويُنفَّذ الآن بدل انتظار إعادة فتح التطبيق
+                          if (settingsPrefs.backupEnabled.first()) {
+                              com.alarsheef.archive.work.BackupScheduler.schedule(context, settingsPrefs.backupFrequency.first())
+                              com.alarsheef.archive.work.BackupScheduler.runOnce(context)
+                          }
+                      }
                   }
                 snackbarHostState.showSnackbar("تم اختيار المجلد")
             }
@@ -276,7 +302,13 @@ when (target) {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ArsheefDrawerContent { panel ->
+            ArsheefDrawerContent(
+                pendingCount = pendingCount,
+                onOpenPending = {
+                    scope.launch { drawerState.close() }
+                    onOpenPending()
+                }
+            ) { panel ->
                 activePanel = panel
                 scope.launch { drawerState.close() }
             }
@@ -285,41 +317,25 @@ when (target) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
-                if (activePanel != null) {
-                    CenterAlignedTopAppBar(
-                        title = { Text("") },
-                        navigationIcon = {
-                            IconButton(
-                                onClick = { activePanel = null },
-                                modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                            }
+                val panel = activePanel
+                if (panel != null) {
+                    GlassTopBar(
+                        title = when (panel) {
+                            DrawerPanel.SETTINGS -> "الإعدادات"
+                            DrawerPanel.EXPORT_IMPORT -> "تصدير / استيراد"
+                            DrawerPanel.BACKUP -> "النسخة الاحتياطية"
+                            DrawerPanel.ABOUT -> "حول التطبيق"
+                            DrawerPanel.AI -> "الذكاء الاصطناعي"
                         },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
+                        onBack = { activePanel = null }
                     )
                 } else {
-                CenterAlignedTopAppBar(
-                    title = { Text("الأرشيف") },
-                    navigationIcon = {
-                        IconButton(
-                            onClick = { scope.launch { drawerState.open() } },
-                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                        ) {
-                            Icon(Icons.Filled.Menu, contentDescription = "القائمة")
+                    GlassTopBar(
+                        title = "الأرشيف",
+                        leading = {
+                            GlassIconButton(Icons.Filled.Menu, "القائمة", { scope.launch { drawerState.open() } })
                         }
-                    },
-                    actions = {
-                        // لا يفتح صفحة منفصلة — يركز حقل البحث الظاهر أسفل الشريط
-                        IconButton(
-                            onClick = { searchFieldFocus.requestFocus() },
-                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                        ) {
-                            Icon(Icons.Filled.Search, contentDescription = "بحث")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
-                )
+                    )
                 }
             },
             floatingActionButton = { if (activePanel == null) AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }) }
@@ -329,21 +345,10 @@ when (target) {
                     when (activePanel) {
                         DrawerPanel.SETTINGS -> SettingsPanelContent(
                             prefs = settingsPrefs,
+                            repository = repository,
                             scope = scope,
                             onPickImportFolder = {
                                 pendingTreeTarget = "import"
-                                treeLauncher.launch(null)
-                            },
-                            onPickWhatsappDocs = {
-                                pendingTreeTarget = "whatsapp_docs"
-                                treeLauncher.launch(null)
-                            },
-                            onPickWhatsappBizDocs = {
-                                pendingTreeTarget = "whatsapp_biz_docs"
-                                treeLauncher.launch(null)
-                            },
-                            onPickDownloads = {
-                                pendingTreeTarget = "downloads"
                                 treeLauncher.launch(null)
                             }
                         )
@@ -360,7 +365,12 @@ when (target) {
                                 pendingExport = PendingExport.All
                                 exportLauncher.launch("alarsheef-archive.zip")
                             },
-                            onImport = { importLauncher.launch(arrayOf("application/zip")) }
+                            // بعض مديري الملفات يصنّف ZIP بنوع آخر فيظهر الملف معطّلًا في المنتقي
+                            onImport = {
+                                importLauncher.launch(
+                                    arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
+                                )
+                            }
                         )
                         DrawerPanel.ABOUT -> AboutPanelContent()
                         DrawerPanel.AI -> AiPanelContent(
@@ -381,8 +391,17 @@ when (target) {
                     focusRequester = searchFieldFocus
                 )
 
+                if (cloudPaused) {
+                    Text(
+                        "التسمية السحابية متوقفة مؤقتًا",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        color = Accent,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     QuickActionBtn(
@@ -420,20 +439,38 @@ when (target) {
                                 storageText = FileUtils.formatBytes(storageBytes),
                                 latestYear = latestYear,
                                 recentImages = recentImages,
+                                pendingCount = pendingCount,
                                 onOpenYear = onOpenYear,
                                 onOpenFaces = onOpenFaces,
-                                onOpenImage = onOpenImage
+                                onOpenImage = onOpenImage,
+                                onOpenPending = onOpenPending
                             )
                         }
                         item {
-                            Text(
-                                "كل السنوات",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
+                            GlassPanel(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { yearsExpanded = !yearsExpanded }
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "كل السنوات",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        if (yearsExpanded) Icons.Filled.KeyboardArrowDown
+                                        else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = TextMuted
+                                    )
+                                }
+                            }
                         }
-                        items(years, key = { it.year }) { row ->
+                        if (yearsExpanded) items(years, key = { it.year }) { row ->
                             YearRowCard(
                                 row = row,
                                 onClick = { onOpenYear(row.year) },
@@ -498,23 +535,16 @@ private fun QuickActionBtn(
 ) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(Glass, RoundedCornerShape(14.dp))
-            .border(1.dp, GlassBorder, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(Radius.Control))
+            .background(Accent)
             .clickable(onClick = onClick)
-            .padding(vertical = 11.dp),
+            .padding(vertical = 12.dp, horizontal = 8.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-        Spacer(modifier = Modifier.width(7.dp))
-        Text(
-            label,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White,
-            maxLines = 1
-        )
+        Icon(icon, contentDescription = null, tint = OnAccent, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OnAccent, maxLines = 1)
     }
 }
 
@@ -528,15 +558,15 @@ private fun YearRowCard(
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(Glass, RoundedCornerShape(18.dp))
-            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    GlassPanel(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconTile(size = 48.dp) {
+                Icon(Icons.Filled.CalendarMonth, contentDescription = null, tint = Accent)
+            }
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(row.label ?: "${row.year}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 val subtitle = if (row.label != null) {
@@ -544,11 +574,11 @@ private fun YearRowCard(
                 } else {
                     "${row.fileCount} ملف · آخر نشاط: ${FileUtils.monthArabicName(row.latestMonth)}"
                 }
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextMuted)
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = TextMuted)
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("تصدير هذه السنة (ZIP)") }, onClick = { menuOpen = false; onExport() })
@@ -572,11 +602,14 @@ private fun SearchResultsList(results: List<ArchivedImage>, onOpenResult: (Archi
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(results, key = { it.id }) { img ->
-            Card(
-                onClick = { onOpenResult(img) },
-                modifier = Modifier.fillMaxWidth()
-                    .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
-                shape = RoundedCornerShape(18.dp)
+            // نمط الصف الزجاجي الموحّد (Card الافتراضي كان سيصير لوحًا كحليًا معتمًا بالثيم الداكن)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Glass)
+                    .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
+                    .clickable { onOpenResult(img) }
             ) {
                 Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -605,44 +638,58 @@ private fun HomeDashboard(
     storageText: String,
     latestYear: Int?,
     recentImages: List<ArchivedImage>,
+    pendingCount: Int,
     onOpenYear: (Int) -> Unit,
     onOpenFaces: () -> Unit,
-    onOpenImage: (ArchivedImage) -> Unit
+    onOpenImage: (ArchivedImage) -> Unit,
+    onOpenPending: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // بطاقة السنة الكبيرة: إجمالي الملفات/الألبومات/المستندات + المساحة المستخدمة
-        Card(
-            onClick = { latestYear?.let(onOpenYear) },
-            modifier = Modifier.fillMaxWidth()
-                .border(1.dp, GlassBorder, RoundedCornerShape(24.dp)),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = GlassStrong)
+        // بطاقة البطل (تصميم 2): السنة + آخر تحديث للأرشيف + أيقونة، وتحتها شريط إحصاء
+        GlassPanel(
+            modifier = Modifier.fillMaxWidth(),
+            radius = Radius.Hero,
+            background = GlassStrong,
+            onClick = { latestYear?.let(onOpenYear) }
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    "${latestYear ?: FileUtils.today().first}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "${stats.totalFiles} صورة · ${stats.albumCount} ألبوم · ${stats.documentCount} مستند",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.85f)
-                )
-                Spacer(Modifier.height(14.dp))
-                Box(
-                    modifier = Modifier
-                        .background(GlassBorder, RoundedCornerShape(50))
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Text("مساحة مستخدمة $storageText", color = Color.White, style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "${latestYear ?: FileUtils.today().first}",
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text("آخر تحديث للأرشيف", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+                    Text(
+                        stats.lastImportedAt?.let { FileUtils.relativeTime(it) } ?: "—",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Accent
+                    )
+                }
+                IconTile(size = 72.dp) {
+                    Icon(Icons.Filled.Archive, contentDescription = null, tint = Accent, modifier = Modifier.size(36.dp))
                 }
             }
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(GlassBorder))
+            Text(
+                listOf(
+                    FileUtils.countLabel(stats.totalFiles, "ملف واحد", "ملفان", "ملفات", "ملفًا"),
+                    FileUtils.countLabel(stats.albumCount, "شهر واحد", "شهران", "أشهر", "شهرًا"),
+                    FileUtils.countLabel(stats.documentCount, "مستند واحد", "مستندان", "مستندات", "مستندًا"),
+                    storageText
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+            )
         }
 
-        // بطاقتا "الوجوه" و"الصور اليوم"
+        // بلاطتا "الوجوه" و"الصور اليوم"
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             StatTile(
                 modifier = Modifier.weight(1f),
@@ -655,25 +702,60 @@ private fun HomeDashboard(
                 modifier = Modifier.weight(1f),
                 icon = Icons.Filled.CameraAlt,
                 title = "الصور اليوم",
-                subtitle = "${stats.todayCount} صورة جديدة",
+                subtitle = "${stats.todayCount} جديدة",
                 onClick = null
             )
         }
 
-        // شريط "آخر الصور"
+        // لافتة المراجعة: تظهر فقط حين يوجد معلّق، لتكون شاشة «قيد المراجعة» قابلة للوصول من الرئيسية
+        if (pendingCount > 0) {
+            GlassPanel(modifier = Modifier.fillMaxWidth(), onClick = onOpenPending) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconTile(size = 40.dp, circle = true) {
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = Accent, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("بانتظار مراجعتك", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text(
+                            FileUtils.countLabel(pendingCount, "ملف واحد لم يُحسم", "ملفان لم يُحسما", "ملفات لم تُحسم", "ملفًا لم يُحسم"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted
+                        )
+                    }
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = TextMuted)
+                }
+            }
+        }
+
+        // لوحة "آخر الصور"
         if (recentImages.isNotEmpty()) {
-            Text("آخر الصور", style = MaterialTheme.typography.titleMedium)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(recentImages, key = { it.id }) { img ->
-                    AsyncImage(
-                        model = File(img.storedPath),
-                        contentDescription = img.fileName,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .clickable { onOpenImage(img) }
-                    )
+            GlassPanel(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "آخر الصور",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp)
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(recentImages, key = { it.id }) { img ->
+                        AsyncImage(
+                            model = File(img.storedPath),
+                            contentDescription = img.fileName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(76.dp)
+                                .clip(RoundedCornerShape(Radius.Control))
+                                .border(1.dp, GlassBorder, RoundedCornerShape(Radius.Control))
+                                .clickable { onOpenImage(img) }
+                        )
+                    }
                 }
             }
         }
@@ -683,31 +765,24 @@ private fun HomeDashboard(
 @Composable
 private fun StatTile(
     modifier: Modifier = Modifier,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     subtitle: String,
     onClick: (() -> Unit)?
 ) {
-    Card(
-        onClick = { onClick?.invoke() },
-        modifier = modifier.border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Box(
-                modifier = Modifier.size(40.dp).background(GlassStrong, RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, contentDescription = null, tint = Color.White)
+    GlassPanel(modifier = modifier, onClick = onClick) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconTile(size = 44.dp, circle = true) {
+                Icon(icon, contentDescription = null, tint = Accent, modifier = Modifier.size(22.dp))
             }
-            Spacer(Modifier.height(10.dp))
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextMuted, maxLines = 1)
+            }
         }
     }
 }

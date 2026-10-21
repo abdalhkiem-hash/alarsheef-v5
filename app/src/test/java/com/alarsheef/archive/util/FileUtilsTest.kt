@@ -90,4 +90,72 @@ class FileUtilsTest {
         assertEquals(64, a.length)
         f.delete()
     }
+
+    // ---------- أساس منع التكرار في الاستيراد ----------
+
+    @Test
+    fun sha256Of_sameContentInDifferentFiles_matches_andDifferentContentDiffers() {
+        val dir = File(System.getProperty("java.io.tmpdir"), "arsheef_test_${System.nanoTime()}")
+        dir.mkdirs()
+        val a = File(dir, "WhatsApp Image.jpg").apply { writeBytes("same".toByteArray()) }
+        val b = File(dir, "copy (1).jpeg").apply { writeBytes("same".toByteArray()) }
+        val c = File(dir, "other.jpg").apply { writeBytes("samE".toByteArray()) }
+        assertEquals(FileUtils.sha256Of(a), FileUtils.sha256Of(b))
+        assertNotEquals(FileUtils.sha256Of(a), FileUtils.sha256Of(c))
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun sha256Of_knownVector() {
+        val f = File(System.getProperty("java.io.tmpdir"), "arsheef_test_${System.nanoTime()}.bin")
+        f.writeBytes("abc".toByteArray())
+        assertEquals(
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            FileUtils.sha256Of(f)
+        )
+        f.delete()
+    }
+
+    @Test
+    fun sha256Of_largerThanBuffer_isHashedCompletely() {
+        val f = File(System.getProperty("java.io.tmpdir"), "arsheef_test_${System.nanoTime()}.bin")
+        val bytes = ByteArray(20_000) { (it % 251).toByte() }
+        f.writeBytes(bytes)
+        val full = FileUtils.sha256Of(f)
+        bytes[19_999] = (bytes[19_999] + 1).toByte() // تغيير آخر بايت فقط
+        f.writeBytes(bytes)
+        assertNotEquals(full, FileUtils.sha256Of(f))
+        f.delete()
+    }
+
+    @Test
+    fun uniqueName_keepsCountingPastFirstConflict() {
+        val dir = File(System.getProperty("java.io.tmpdir"), "arsheef_test_${System.nanoTime()}")
+        dir.mkdirs()
+        repeat(3) { File(dir, FileUtils.uniqueName("IMG", "jpg", dir)).writeBytes(byteArrayOf(1)) }
+        assertEquals(setOf("IMG.jpg", "IMG_1.jpg", "IMG_2.jpg"), dir.list()!!.toSet())
+        assertEquals("IMG_3.jpg", FileUtils.uniqueName("IMG", "jpg", dir))
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun isImage_coversModernFormats_soTheyNeverFallToRawSafImport() {
+        for (name in listOf("a.heic", "a.HEIF", "a.avif", "a.gif", "a.bmp", "a.tiff", "a.jpeg")) {
+            assertTrue(name, FileUtils.isImage(name))
+        }
+        assertFalse(FileUtils.isImage("a.jpg.crdownload"))
+        assertFalse(FileUtils.isImage("jpg"))
+    }
+
+    @Test
+    fun startOfToday_isMidnightNotAfterNow() {
+        val start = FileUtils.startOfToday()
+        val now = System.currentTimeMillis()
+        assertTrue(start <= now)
+        assertTrue(now - start < 25L * 60 * 60 * 1000) // 25 ساعة تغطي يوم تغيير التوقيت
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = start }
+        // (الساعة لا تُفحص: في مناطق يبدأ فيها التوقيت الصيفي عند منتصف الليل لا توجد 00:00)
+        assertEquals(0, cal.get(java.util.Calendar.MINUTE))
+        assertEquals(0, cal.get(java.util.Calendar.MILLISECOND))
+    }
 }

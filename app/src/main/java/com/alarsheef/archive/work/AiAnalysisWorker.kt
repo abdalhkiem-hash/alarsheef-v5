@@ -2,6 +2,7 @@ package com.alarsheef.archive.work
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -9,127 +10,20 @@ import com.alarsheef.archive.ai.ClassifiedLabel
 import com.alarsheef.archive.ai.FaceGroupingEngine
 import com.alarsheef.archive.ai.GeminiClassifier
 import com.alarsheef.archive.ai.GeminiRepository
+import com.alarsheef.archive.ai.InvoiceInfo
 import com.alarsheef.archive.ai.OcrEngine
 import com.alarsheef.archive.ai.SmartClassifier
+import com.alarsheef.archive.data.entities.ArchivedImage
 import com.alarsheef.archive.data.entities.ContentVerified
 import com.alarsheef.archive.data.repository.ArchiveRepository
+import com.alarsheef.archive.scanner.ImportGate
+import com.alarsheef.archive.scanner.ImportRules
+import com.alarsheef.archive.util.ArchiveNaming
+import com.alarsheef.archive.util.DocumentName
 import com.alarsheef.archive.settings.SettingsPreferences
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import java.io.File
-
-/**
- * بوابة التحقق من محتوى المستند النصي — المرحلة 1 من نهج التحقق المرحلي.
- * تعمل بشكل مستقل عن ImportGate و SmartClassifier.
- *
- * تريد-أوف موثق: التحقق النصي يُجرى في AiAnalysisWorker (بعد الاستيراد) لا في FileScannerWorker.
- * السبب: FileScannerWorker مسح يومي سريع — إضافة OCR متزامن يرفع زمن المسح 50-100x،
- * يكسر فصل الاهتمامات، ويمنع أرشفة الملفات "المعلّقة" للمراجعة عند فشل OCR.
- * المقايضة: الملفات تدخل الأرشيف أولاً بـ contentVerified=0، ثم تُصفّى لاحقًا.
- */
-sealed class ContentVerdict {
-    /** محتوى نصي واضح لمستند — يُقبل. */
-    data class Accepted(
-        val matchedKeywords: List<String>,
-        val primaryCategory: DocumentCategory
-    ) : ContentVerdict()
-
-    /** محتوى نصي ضعيف/غامض — يُحفظ للمراجعة اليدوية. */
-    data class Ambiguous(
-        val partialMatches: List<String>
-    ) : ContentVerdict()
-
-    /** محتوى نصي لا يدل على مستند — يُرفض. */
-    data class Rejected(
-        val reason: String
-    ) : ContentVerdict()
-}
-
-/** فئات المستندات المستهدفة. */
-enum class DocumentCategory {
-    INVOICE,      // فاتورة
-    RECEIPT,      // إيصال/حوالة
-    CASH_BOX,     // حركة صندوق
-    CONTRACT,     // عقد
-    ID_DOCUMENT,  // هوية/جواز
-    NOTE          // ملاحظات/نص عام
-}
-
-/**
- * يطبع النص المُستخرج ويقرر إن كان يدل على مستند مستهدف.
- * مطابقة كلمات مفتاحية مع تطبيع نص (إزالة تشكيل، توحيد مسافات) وشرط "أكثر من دليل".
- */
-fun verify(ocrText: String): ContentVerdict {
-    if (ocrText.isNullOrBlank()) {
-        return ContentVerdict.Rejected("نص فارغ")
-    }
-
-    val normalized = normalize(ocrText)
-
-    // كلمات مفتاحية لكل فئة — تطبيع مسبق
-    val keywords = mapOf(
-        DocumentCategory.INVOICE to listOf("فاتورة", "مبلغ", "إجمالي", "ضريبة", "قيمة", "مشتريات", "مبيعات", "فاتورة ضريبية", "invoice", "total", "tax"),
-        DocumentCategory.RECEIPT to listOf("إيصال", "حوالة", "تحويل", "استلام", "دفع", "قبض", "مبلغ", "مرسل", "مستلم", "receipt", "transfer"),
-        DocumentCategory.CASH_BOX to listOf("صندوق", "حركة", "إيداع", "سحب", "رصيد", "أمانة", "أمانات", "cash", "box"),
-        DocumentCategory.CONTRACT to listOf("عقد", "إتفاق", "بند", "طرف أول", "طرف ثاني", "مدة", "إيجار", "بيع", "شراء", "contract"),
-        DocumentCategory.ID_DOCUMENT to listOf("هوية", "جواز", "رقم قومي", "بطاقة", "سجل مدني", "تاريخ ميلاد", "id", "passport", "national id"),
-        DocumentCategory.NOTE to listOf("ملاحظة", "ملاحظات", "تذكير", "هام", "هام جداً", "note", "memo")
-    )
-
-    val matches = mutableMapOf<DocumentCategory, MutableList<String>>()
-    var totalMatches = 0
-
-    keywords.forEach { (category, words) ->
-        val found = words.filter { word ->
-            normalized.contains(word, ignoreCase = true)
-        }
-        if (found.isNotEmpty()) {
-            matches[category] = found.toMutableList()
-            totalMatches += found.size
-        }
-    }
-
-    return when {
-        // لا توجد أي مطابقة
-        totalMatches == 0 -> ContentVerdict.Rejected("لا توجد كلمات مفتاحية لمستند")
-
-        // مطابقة واحدة فقط → غامض (قد يكون نصاً عشوائياً)
-        totalMatches == 1 -> {
-            val (cat, words) = matches.entries.first()
-            ContentVerdict.Ambiguous(words)
-        }
-
-        // مطابقة في أكثر من فئة → غامض (نص مختلط)
-        matches.size > 1 -> {
-            val allWords = matches.values.flatten()
-            ContentVerdict.Ambiguous(allWords)
-        }
-
-        // مطابقة قوية في فئة واحدة فقط → مقبول
-        else -> {
-            val (cat, words) = matches.entries.first()
-            ContentVerdict.Accepted(words, cat)
-        }
-    }
-}
-
-/** يطبع النص: يزيل التشكيل، يوحد المسافات، يحول للأحرف الأساسية. */
-private fun normalize(text: String): String {
-    return text
-        // إزالة التشكيل العربي (علامات التشكيل: 0x064B-0x065F)
-        .replace(Regex("[\\u064B-\\u065F]"), "")
-        // توحيد الألف: أ إ آ → ا
-        .replace(Regex("[\\u0622\\u0623\\u0625]"), "ا")
-        // توحيد الياء: ي ى → ي
-        .replace(Regex("[\\u0649\\u064A]"), "ي")
-        // توحيد التاء المربوطة: ة → ه
-        .replace("ة", "ه")
-        // إزالة علامات الترقيم والرموز
-        .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-        // توحيد المسافات
-        .replace(Regex("\\s+"), " ")
-        .trim()
-        .lowercase()
-}
 
 /**
  * التحليل الذكي بنظام هجين:
@@ -139,8 +33,8 @@ private fun normalize(text: String): String {
  *   • التصنيف: صورة بلا وسوم أو ثقة منخفضة (< 0.6) أو مستند/لقطة شاشة
  *     (يستحق وصفًا عربيًا واستخراج بيانات فاتورة).
  *   • OCR: نص محلي قصير/غائب أو جهاز دون Android 13 — النص السحابي عربي دقيق.
- * - كل محاولة سحابية تحجز من حصة يومية (tryConsumeGeminiQuota)؛ عند نفادها
- *   أو غياب المفتاح أو أي خطأ شبكة يكمل المسح بالمحلي بهدوء بلا استثناء.
+ * - الحصة تُخصم بعد رد ناجح فقط. خطأ 503 أو انقطاع الشبكة يوقف النداءات
+ *   التالية في هذه الدفعة ولا يخصم الحصة، ويكمل المسح بالتسمية المحلية.
  *
  * يعالج الدفعات (حتى MAX_PER_RUN لكل تشغيل) ويسلّم التكملة لنفسه إن بقي
  * أرشيف غير محلل، ثم تُرمَّز الصور لذلك لا تُعاد معالجتها كل يوم.
@@ -151,7 +45,6 @@ class AiAnalysisWorker(
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
-        const val UNIQUE_WORK_NAME = "ai_image_analysis"
         const val ONE_TIME_WORK_NAME = "ai_image_analysis_onetime"
         private const val MAX_PER_RUN = 120
         private const val TAG = "AiAnalysisWorker"
@@ -167,6 +60,19 @@ class AiAnalysisWorker(
 
         /** الوسوم التي تدل على مستند يستحق وصفًا سحابيًا واستخراج فاتورة. */
         private val DOCUMENT_LABELS = setOf("مستند / ملف نصي", "لقطة شاشة")
+
+        /** إعادة محاولة التسمية تشمل ما استُورد خلال هذه المدة فقط — لا إعادة تسمية جماعية للأرشيف القديم. */
+        private const val RENAME_RETRY_WINDOW_MS = 30L * 24 * 60 * 60 * 1000
+
+        /** أقصى ما يُجلب من المرشّحين، وأقصى ما يُحاوَل في التشغيل الواحد. */
+        private const val RETRY_QUERY_LIMIT = 300
+        private const val MAX_RETRY_PER_RUN = 20
+
+        /** سقف تمريرة التسمية المحلية في التشغيل الواحد. */
+        private const val MAX_LOCAL_RENAME = 200
+
+        /** إخفاقات سحابية متتالية توقف إعادة المحاولة في هذا التشغيل. */
+        private const val MAX_RETRY_FAILURES = 3
     }
 
     override suspend fun doWork(): Result {
@@ -181,10 +87,21 @@ class AiAnalysisWorker(
         // جاهزية السحابة: المفتاح موجود فعليًا + التفعيل مضمّن — وإلا فحص محلي فقط
         val cloudReady = prefs.geminiCloudEnabled.first() && GeminiRepository.isConfigured()
         GeminiRepository.resetRateLimit()
+        val userTypes = repository.documentTypeRules()
+        val localRenamed = applyLocalTypeNames(repository, userTypes)
+        if (localRenamed > 0) Log.i(TAG, "تسمية محلية من النص المحفوظ: $localRenamed ملف")
         if (!ocrEnabled && !labelsEnabled && !facesEnabled) return Result.success()
 
-        /** يحجز محاولة واحدة من الحصة اليومية (false = نفد الحد اليومي). */
-        suspend fun consumeQuota(): Boolean = prefs.tryConsumeGeminiQuota(GeminiRepository.DAILY_LIMIT)
+        fun cloudAvailable(): Boolean = cloudReady && !GeminiRepository.rateLimited
+
+        /** هل بقي من الحصة ما يكفي لنداء، بدون خصم. */
+        suspend fun canCallCloud(limit: Int = GeminiRepository.DAILY_LIMIT): Boolean =
+            cloudAvailable() && prefs.hasGeminiQuota(limit)
+
+        /** يخصم الحصة بعد رد ناجح فقط. */
+        suspend fun commitQuota(limit: Int = GeminiRepository.DAILY_LIMIT) {
+            prefs.commitGeminiQuota(limit)
+        }
 
         /** هل تحتاج الصورة استدعاء سحابي للتصنيف؟ (غامضة أو مستند يستحق وصف/فاتورة) */
         fun needsCloudClassification(local: List<ClassifiedLabel>): Boolean {
@@ -196,12 +113,17 @@ class AiAnalysisWorker(
         val facesRoot = File(context.filesDir, "face_crops").apply { mkdirs() }
 
         // ممثلو المجموعات الحالية — لاستمرارية التجميع عبر التشغيلات
-        val groupReps = repository.faceGroupRepresentatives().associate {
-            it.groupKey to java.lang.Long.parseUnsignedLong(it.repHash, 16)
-        }.toMutableMap()
+        // (بصمة تالفة في القاعدة تُتجاهل بدل أن تُسقط كل دفعات التحليل)
+        val groupReps = repository.faceGroupRepresentatives().mapNotNull { rep ->
+            runCatching { rep.groupKey to java.lang.Long.parseUnsignedLong(rep.repHash, 16) }.getOrNull()
+        }.toMap().toMutableMap()
 
         val pending = repository.pendingAiImages(MAX_PER_RUN)
-        if (pending.isEmpty()) return Result.success()
+        if (pending.isEmpty()) {
+            // لا جديد للتحليل: فرصة لتسمية المستندات التي فاتتها التسمية الذكية
+            if (labelsEnabled && cloudReady) retrySmartNaming(repository, prefs, usePro, userTypes)
+            return Result.success()
+        }
 
         /** مربع نص: يقرر إدراج وجه في مجموعة قائمة أو إنشاء مجموعة جديدة */
         fun resolveGroup(hash: Long): String {
@@ -216,13 +138,23 @@ class AiAnalysisWorker(
 
         var processed = 0
         var cloudCalls = 0
+        var renamed = 0
         for (image in pending) {
             val file = File(image.storedPath)
             if (!file.exists()) {
                 repository.markAiAnalyzed(image.id)
                 continue
             }
+            // وثيقة خام (docx/xlsx من مجلد SAF) أو صورة تالفة: لا شيء فيها يُحلَّل محليًا، وكانت
+            // تحجز محاولتين من الحصة السحابية اليومية (تصنيف + OCR) بلا أي نداء فعلي.
+            if (!isDecodableImage(file)) {
+                repository.markAiAnalyzed(image.id)
+                continue
+            }
 
+            // بيانات الفاتورة من السحابة + نص الصورة: مُدخلا التسمية في آخر خطوة
+            var invoice: InvoiceInfo? = null
+            var ocrText: String? = null
             try {
                 // تمريرة واحدة لاكتشاف الوجوه — تستخدم للإشارة في التصنيف وللتجميع معًا
                 val faces = if (facesEnabled) {
@@ -232,10 +164,14 @@ class AiAnalysisWorker(
                 if (labelsEnabled) {
                     val local = SmartClassifier.classifyFile(file, faces.size)
                     var final = local
-                    if (cloudReady && !GeminiRepository.rateLimited &&
-                        needsCloudClassification(local) && consumeQuota()
-                    ) {
+                    // مستند مثبت (قبلته البوابة النصية أو يحمل بادئة نوع) يستحق الاسم الذكي دائمًا.
+                    // كان النداء السحابي يُتخطى حين يثق المصنّف المحلي بوسم غير مستندي
+                    // (فاتورة مصوَّرة على طاولة = «داخلي دافئ») فلا تُسمّى أبدًا.
+                    val provenDocument = image.contentVerified == ContentVerified.ACCEPTED ||
+                        ArchiveNaming.labelOf(image.fileName) != null
+                    if (canCallCloud() && (provenDocument || needsCloudClassification(local))) {
                         GeminiClassifier.classify(file, usePro)?.let { result ->
+                            commitQuota()
                             cloudCalls++
                             // وسوم الوجوه المحلية تُدمج مع نتيجة السحابة (لا نفقدها)
                             val merged = (result.labels + local.filter { it.label in FACE_LABELS })
@@ -243,60 +179,55 @@ class AiAnalysisWorker(
                                 .sortedByDescending { it.confidence }
                                 .take(6)
                             if (merged.isNotEmpty()) final = merged
-                            if (result.description.isNotBlank() || result.invoice != null) {
-                                repository.saveCloudMeta(
-                                    image.id, result.description, result.invoice,
-                                    GeminiRepository.model(usePro)
-                                )
-                            }
+                            // يُحفظ دائمًا عند نجاح النداء (ولو بلا وصف): وجود الصف هو علامة
+                            // «صُنِّف سحابيًا» التي تُخرج الملف من إعادة المحاولة.
+                            repository.saveCloudMeta(
+                                image.id, result.description, result.invoice,
+                                GeminiRepository.model(usePro)
+                            )
+                            invoice = result.invoice
                         }
                     }
                     if (final.isNotEmpty()) repository.saveLabels(image.id, final)
                 }
 
-                if (ocrEnabled) {
+                // نص قرأته بوابة الاستيراد (أو تحليل سابق) يُعاد استخدامه — كان يُطلب OCR سحابي
+                // ثانٍ للصورة نفسها، فتنفد الحصة اليومية قبل الوصول إلى التسمية الذكية.
+                val storedText = repository.ocrTextFor(image.id)?.takeIf { it.isNotBlank() }
+                if (storedText != null) {
+                    ocrText = storedText
+                } else if (ocrEnabled) {
                     val localText = if (OcrEngine.isAvailable(context)) {
                         OcrEngine.recognizeFile(context, file)
                     } else null
                     val localAdequate = !localText.isNullOrBlank() && localText.length >= MIN_LOCAL_OCR_CHARS
                     var saved = false
-                    var finalText: String? = null
                     if (localAdequate) {
                         repository.saveOcrText(image.id, localText!!)
-                        finalText = localText
                         saved = true
-                    } else if (cloudReady && !GeminiRepository.rateLimited && consumeQuota()) {
+                        ocrText = localText
+                    } else if (canCallCloud()) {
                         GeminiRepository.extractText(file, usePro)?.let { cloudText ->
-                            if (cloudText.isNotBlank() && cloudText != "لا يوجد نص") {
+                            if (cloudText.isNotBlank() && !ImportGate.isNoTextReply(cloudText)) {
+                                commitQuota()
                                 repository.saveOcrText(image.id, cloudText)
-                                finalText = cloudText
                                 saved = true
                                 cloudCalls++
+                                ocrText = cloudText
                             }
                         }
                     }
                     // آخر احتياطي: نص محلي ضعيف يُحفظ على أي حال إن لم يأتِ السحابي
                     if (!saved && !localText.isNullOrBlank()) {
                         repository.saveOcrText(image.id, localText)
-                        finalText = localText
-                    }
-
-                    // المرحلة 2: التحقق النصي من محتوى المستند
-                    finalText?.let { text ->
-                        val verdict = verify(text)
-                        val status = when (verdict) {
-                            is ContentVerdict.Accepted -> ContentVerified.ACCEPTED
-                            is ContentVerdict.Ambiguous -> ContentVerified.AMBIGUOUS
-                            is ContentVerdict.Rejected -> ContentVerified.REJECTED
-                            else -> ContentVerified.UNVERIFIED
-                        }
-                        repository.updateContentVerified(image.id, status)
+                        ocrText = localText
                     }
                 }
 
-                if (facesEnabled && faces.isNotEmpty()) {
+                if (facesEnabled) {
                     // قبل الإدراج: تطهير أي أعضاء سابقة لهذه الصورة (حالة إعادة التحليل)
-                    // حتى لا تتضاعف المجموعات ولا تتراكم ملفات القصّ على القرص
+                    // حتى لا تتضاعف المجموعات ولا تتراكم ملفات القصّ على القرص —
+                    // ويشمل صورة لم يعد يُرصد فيها وجه (كانت تبقى أعضاؤها القديمة).
                     repository.purgeFaceDataForImage(image.id)
                     for (face in faces) {
                         val crop = FaceGroupingEngine.extractCrop(file, face) ?: continue
@@ -320,20 +251,130 @@ class AiAnalysisWorker(
                 Log.w(TAG, "OOM لمعالجة الصورة ${image.id}: ${e.message}")
                 repository.markAiAnalyzed(image.id)
                 continue
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // صورة واحدة تالفة كانت تُفشل العامل كله وتبقى أول القائمة فيتوقف التحليل
+                // عندها للأبد — تُعلَّم محلَّلة ويُكمَل بالباقي.
+                Log.w(TAG, "تعذّر تحليل الصورة ${image.id}: ${e.javaClass.simpleName}: ${e.message}")
+                repository.markAiAnalyzed(image.id)
+                continue
             }
+
+            // آخر خطوة للصورة: إعادة التسمية (بعد انتهاء كل استخدامات الملف بمساره القديم).
+            // اسم ذكي كامل إن أعادت السحابة جهة/مبلغ، وإلا بادئة النوع من النص بدل IMG.
+            if (applyPlannedName(repository, image, ocrText, invoice, userTypes)) renamed++
 
             repository.markAiAnalyzed(image.id)
             processed++
         }
 
         if (cloudCalls > 0) Log.d(TAG, "استدعاءات Gemini السحابية في هذه الدفعة: $cloudCalls")
+        if (renamed > 0) Log.i(TAG, "أُعيدت تسمية $renamed ملف في هذه الدفعة")
 
         // لو بقي كثير غير محلل: نسلّم دفعة أخرى لنفس العامل
         if (repository.pendingAiCountOnce() > 0) {
-            AiAnalysisScheduler.start(context)
+            AiAnalysisScheduler.continueAfterBatch(context)
+        } else if (labelsEnabled && cloudReady) {
+            retrySmartNaming(repository, prefs, usePro, userTypes)
         }
 
-        return if (processed > 0) Result.success() else Result.retry()
+        // كل صورة في الدفعة عُلِّمت محلَّلة (حتى المفقودة والتالفة) فالتقدّم مضمون —
+        // retry هنا كان يؤخّر الدفعة الملحقة بلا فائدة.
+        Log.d(TAG, "انتهت الدفعة: $processed صورة من ${pending.size}")
+        return Result.success()
+    }
+
+    /**
+     * يطبّق الاسم المخطَّط ([ArchiveNaming.plannedBase]) إن وُجد.
+     * @return true إذا تغيّر اسم الملف فعلًا.
+     */
+    private suspend fun applyPlannedName(
+        repository: ArchiveRepository,
+        image: ArchivedImage,
+        ocrText: String?,
+        invoice: InvoiceInfo?,
+        userTypes: List<DocumentName.UserType>,
+    ): Boolean {
+        val base = ArchiveNaming.plannedBase(
+            fileName = image.fileName,
+            nameLocked = image.nameLocked,
+            ocrText = ocrText,
+            vendor = invoice?.vendor,
+            invoiceDate = invoice?.date,
+            amount = invoice?.amount,
+            currency = invoice?.currency,
+            fallbackDate = String.format(
+                java.util.Locale.ROOT, "%04d-%02d-%02d", image.year, image.month, image.day
+            ),
+            userTypes = userTypes,
+            pageNumber = ImportRules.pageNumberOf(image.originalPath, image.originalName),
+        ) ?: return false
+        val updated = runCatching { repository.renameImage(image, base, lock = false) }.getOrNull()
+        if (updated == null) Log.w(TAG, "تعذّرت إعادة تسمية ${image.fileName} إلى $base")
+        return updated != null && updated.fileName != image.fileName
+    }
+
+    /**
+     * إعادة محاولة التسمية الذكية لمستندات حُلِّلت ولم ينجح لها تصنيف سحابي — مصدر الاسم
+     * الذكي الوحيد. كان التحليل محاولة واحدة: إن نفدت الحصة يومها أو انقطعت الشبكة أو ردّ
+     * Google بـ429 عُلِّمت الصورة «محلَّلة» وبقيت باسمها المؤقت للأبد.
+     *
+     * محدودة عمدًا: أحدث [MAX_RETRY_PER_RUN] مستند مما استُورد خلال [RENAME_RETRY_WINDOW_MS].
+     * الحصة تُخصم بعد رد ناجح فقط، وتقف الدفعة عند توقف الخدمة.
+     */
+    private suspend fun retrySmartNaming(
+        repository: ArchiveRepository,
+        prefs: SettingsPreferences,
+        usePro: Boolean,
+        userTypes: List<DocumentName.UserType>,
+    ) {
+        val since = System.currentTimeMillis() - RENAME_RETRY_WINDOW_MS
+        val candidates = repository.smartNameCandidates(since, RETRY_QUERY_LIMIT).take(MAX_RETRY_PER_RUN)
+        if (candidates.isEmpty()) return
+
+        var renamed = 0
+        var classified = 0
+        var failures = 0
+        for (image in candidates) {
+            if (GeminiRepository.rateLimited) break
+            val file = File(image.storedPath)
+            if (!file.exists()) continue
+            if (!prefs.hasGeminiQuota(GeminiRepository.DAILY_LIMIT)) break
+
+            val result = GeminiClassifier.classify(file, usePro)
+            if (result == null) {
+                if (GeminiRepository.rateLimited) break
+                if (++failures >= MAX_RETRY_FAILURES) break
+                continue
+            }
+            prefs.commitGeminiQuota(GeminiRepository.DAILY_LIMIT)
+            failures = 0
+            classified++
+            repository.saveCloudMeta(image.id, result.description, result.invoice, GeminiRepository.model(usePro))
+            if (applyPlannedName(repository, image, repository.ocrTextFor(image.id), result.invoice, userTypes)) renamed++
+        }
+        Log.i(TAG, "إعادة محاولة التسمية: ${candidates.size} مرشّح، صُنِّف $classified، أُعيدت تسمية $renamed")
+    }
+
+    /** يبني الاسم من نص الورقة للأسماء التلقائية، ومنها `مستند_`. بلا Gemini. */
+    private suspend fun applyLocalTypeNames(
+        repository: ArchiveRepository,
+        userTypes: List<DocumentName.UserType>,
+    ): Int {
+        var renamed = 0
+        for (image in repository.imagesAwaitingLocalTypeName(MAX_LOCAL_RENAME)) {
+            val text = repository.ocrTextFor(image.id) ?: continue
+            if (applyPlannedName(repository, image, text, invoice = null, userTypes)) renamed++
+        }
+        return renamed
+    }
+
+    /** هل يُفكّ الملف كصورة؟ يقرأ الأبعاد فقط بلا تحميل البكسلات. */
+    private fun isDecodableImage(file: File): Boolean {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        return bounds.outWidth > 0 && bounds.outHeight > 0
     }
 
     private fun saveBitmap(bitmap: Bitmap, target: File) {

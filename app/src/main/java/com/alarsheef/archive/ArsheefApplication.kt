@@ -1,8 +1,10 @@
 package com.alarsheef.archive
 
 import android.app.Application
+import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.scanner.WorkScheduler
 import com.alarsheef.archive.settings.SettingsPreferences
+import com.alarsheef.archive.util.FileUtils
 import com.alarsheef.archive.work.AiAnalysisScheduler
 import com.alarsheef.archive.work.BackupScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +26,11 @@ class ArsheefApplication : Application() {
 
             if (prefs.autoImport.first()) {
                 WorkScheduler.scheduleDailyScan(this@ArsheefApplication)
+            }
+            // مجلد الإدخال أخذ ملفات أقدم من اليوم. تُزال عند الفتح، وأرشيف واتساب والمعرض يبقى.
+            if (!prefs.importFolderUri.first().isNullOrBlank()) {
+                ArchiveRepository(this@ArsheefApplication)
+                    .removeInboxCapturedBefore(FileUtils.startOfToday())
             }
 
             if (prefs.backupEnabled.first()) {

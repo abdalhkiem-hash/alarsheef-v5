@@ -59,7 +59,7 @@ object NameSuggester {
             }
 
         // 3) مجموعات الوجوه المسماة: "صور فلان"
-        val knownNames = faceNames.filter { !it.isBlank() && it.isNotBlank() }
+        val knownNames = faceNames.filter { it.isNotBlank() }
         if (knownNames.isNotEmpty()) {
             val namesStr = knownNames.take(3).joinToString(" ")
             results += "صور $namesStr"

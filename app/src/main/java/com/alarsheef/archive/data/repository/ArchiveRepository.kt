@@ -21,9 +21,14 @@ import com.alarsheef.archive.data.entities.ArchivedImage
 import com.alarsheef.archive.data.entities.ContentVerified
 import com.alarsheef.archive.data.entities.CustomLabel
 import com.alarsheef.archive.data.entities.DayGroup
+import com.alarsheef.archive.data.entities.DocumentType
+import com.alarsheef.archive.data.entities.ProcessedSource
 import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.data.entities.SubFolder
 import com.alarsheef.archive.scanner.ImportEnhancer
+import com.alarsheef.archive.scanner.ImportRules
+import com.alarsheef.archive.util.ArchiveNaming
+import com.alarsheef.archive.util.DocumentName
 import com.alarsheef.archive.util.FileUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -35,8 +40,9 @@ import java.io.File
 import java.io.FileOutputStream
 
 data class YearRow(val year: Int, val fileCount: Int, val latestMonth: Int, val label: String?)
-data class MonthRow(val month: Int, val fileCount: Int, val label: String?)
-data class DayRow(val day: Int, val fileCount: Int, val lastImportedAt: Long, val label: String?)
+data class MonthRow(val month: Int, val fileCount: Int, val label: String?, val lastImportedAt: Long? = null)
+/** docCount = ملفات تحقّق النص من أنها مستندات (ACCEPTED)؛ الباقي يُعرض «صور». */
+data class DayRow(val day: Int, val fileCount: Int, val lastImportedAt: Long, val label: String?, val docCount: Int = 0)
 data class SubFolderRow(val id: Long, val name: String)
 data class DayGroupRow(val id: Long, val dayNumber: Int)
 
@@ -46,15 +52,18 @@ sealed class ImportResult {
     data object Failed : ImportResult()
 }
 
-class ArchiveRepository(context: Context) {
+/** @param database يُحقن في الاختبارات فقط (قاعدة بالذاكرة)؛ الافتراضي قاعدة التطبيق. */
+class ArchiveRepository(context: Context, database: AppDatabase? = null) {
 
     private val context = context.applicationContext
-    private val db = AppDatabase.getInstance(this.context)
+    private val db = database ?: AppDatabase.getInstance(this.context)
     private val imageDao = db.archivedImageDao()
     private val labelDao = db.customLabelDao()
     private val aiDao = db.aiDao()
     private val subFolderDao = db.subFolderDao()
     private val dayGroupDao = db.dayGroupDao()
+    private val documentTypeDao = db.documentTypeDao()
+    private val processedSourceDao = db.processedSourceDao()
     private val rootDir get() = this.context.filesDir
 
     // ---------- قراءة ----------
@@ -72,13 +81,13 @@ class ArchiveRepository(context: Context) {
     fun observeMonthRows(year: Int): Flow<List<MonthRow>> =
         combine(imageDao.observeMonths(year), labelDao.observeAll()) { months, labels ->
             val labelMap = labels.associate { it.scopeKey to it.label }
-            months.map { m -> MonthRow(m.month, m.fileCount, labelMap["m-$year-${m.month}"]) }
+            months.map { m -> MonthRow(m.month, m.fileCount, labelMap["m-$year-${m.month}"], m.lastImportedAt) }
         }
 
     fun observeDayRows(year: Int, month: Int): Flow<List<DayRow>> =
         combine(imageDao.observeDays(year, month), labelDao.observeAll()) { days, labels ->
             val labelMap = labels.associate { it.scopeKey to it.label }
-            days.map { d -> DayRow(d.day, d.fileCount, d.lastImportedAt, labelMap["d-$year-$month-${d.day}"]) }
+            days.map { d -> DayRow(d.day, d.fileCount, d.lastImportedAt, labelMap["d-$year-$month-${d.day}"], d.docCount) }
         }
 
     fun observeSubFolders(year: Int, month: Int): Flow<List<SubFolderRow>> =
@@ -109,13 +118,16 @@ class ArchiveRepository(context: Context) {
         dayGroupDao.delete(id)
     }
 
+    /**
+     * يحذف اليوم كاملًا: اليوم اليدوي (إن وُجد) **و**ملفاته. كان يكتفي بأحدهما —
+     * يوم يدوي فيه ملفات يبقى بملفاته، ويوم بلا مجموعة تُمسح صفوفه فقط فتبقى
+     * الملفات على القرص وصفوف الذكاء الاصطناعي يتيمة.
+     */
     suspend fun deleteDayOrGroup(year: Int, month: Int, day: Int) = withContext(Dispatchers.IO) {
-        val group = dayGroupDao.observeByMonth(year, month).first().find { it.dayNumber == day }
-        if (group != null) {
-            dayGroupDao.delete(group.id)
-        } else {
-            imageDao.deleteDay(year, month, day)
-        }
+        dayGroupDao.observeByMonth(year, month).first()
+            .filter { it.dayNumber == day }
+            .forEach { dayGroupDao.delete(it.id) }
+        deleteDay(year, month, day)
     }
 
     fun observeDayImages(year: Int, month: Int, day: Int): Flow<List<ArchivedImage>> =
@@ -129,7 +141,8 @@ class ArchiveRepository(context: Context) {
         val albumCount: Int,
         val documentCount: Int,
         val faceCount: Int,
-        val todayCount: Int
+        val todayCount: Int,
+        val lastImportedAt: Long? = null
     )
 
     fun observeDashboardStats(year: Int): Flow<DashboardStats> {
@@ -138,14 +151,16 @@ class ArchiveRepository(context: Context) {
             imageDao.observeOverallStats(year),
             imageDao.observeTodayCount(startOfDay),
             aiDao.observeDocumentCount(year),
-            aiDao.observeFaceGroupRows()
-        ) { overall, today, docs, faceGroups ->
+            aiDao.observeFaceGroupRows(),
+            imageDao.observeLastImportedAt()
+        ) { overall, today, docs, faceGroups, lastImported ->
             DashboardStats(
                 totalFiles = overall.totalFiles,
                 albumCount = overall.albumCount,
                 documentCount = docs,
                 faceCount = faceGroups.size,
-                todayCount = today
+                todayCount = today,
+                lastImportedAt = lastImported
             )
         }
     }
@@ -201,7 +216,7 @@ class ArchiveRepository(context: Context) {
     }
 
     suspend fun deleteYear(year: Int) = withContext(Dispatchers.IO) {
-        cleanupAiRowsForImages(imageDao.getByYearOnce(year))
+        cleanupAiRowsForImages(imageDao.getByYearAll(year))
         File(rootDir, "archive/$year").deleteRecursively()
         imageDao.deleteYear(year)
         labelDao.clearAllUnderPrefix("y-$year")
@@ -210,7 +225,7 @@ class ArchiveRepository(context: Context) {
     }
 
     suspend fun deleteMonth(year: Int, month: Int) = withContext(Dispatchers.IO) {
-        cleanupAiRowsForImages(imageDao.getByMonthOnce(year, month))
+        cleanupAiRowsForImages(imageDao.getByMonthAll(year, month))
         val monthStr = FileUtils.twoDigits(month)
         File(rootDir, "archive/$year/$monthStr").deleteRecursively()
         imageDao.deleteMonth(year, month)
@@ -219,7 +234,7 @@ class ArchiveRepository(context: Context) {
     }
 
     suspend fun deleteDay(year: Int, month: Int, day: Int) = withContext(Dispatchers.IO) {
-        cleanupAiRowsForImages(imageDao.getByDayOnce(year, month, day))
+        cleanupAiRowsForImages(imageDao.getByDayAll(year, month, day))
         val monthStr = FileUtils.twoDigits(month)
         val dayStr = FileUtils.twoDigits(day)
         File(rootDir, "archive/$year/$monthStr/$dayStr").deleteRecursively()
@@ -239,6 +254,8 @@ class ArchiveRepository(context: Context) {
         val targetDir = FileUtils.dayFolder(rootDir, targetYear, targetMonth, targetDay)
         var moved = 0
         images.forEach { img ->
+            // في مكانه أصلًا: النقل كان يعيد تسميته "_1" بلا داعٍ ويُحتسب منقولًا
+            if (img.year == targetYear && img.month == targetMonth && img.day == targetDay) return@forEach
             val source = File(img.storedPath)
             if (!source.exists()) return@forEach
             val ext = source.extension.ifBlank { "jpg" }
@@ -260,6 +277,14 @@ class ArchiveRepository(context: Context) {
         cleanupAiRowsForImages(images)
         images.forEach { File(it.storedPath).delete() }
         images.map { it.id }.chunked(400).forEach { imageDao.deleteByIds(it) }
+    }
+
+    /** يحذف ما أرشفَه مجلد الإدخال قبل اليوم: السجل والملف. المصادر الأخرى تبقى. */
+    suspend fun removeInboxCapturedBefore(startOfTodayMillis: Long): Int = withContext(Dispatchers.IO) {
+        val stale = imageDao.inboxCapturedBefore(startOfTodayMillis)
+        if (stale.isEmpty()) return@withContext 0
+        deleteImages(stale)
+        stale.size
     }
 
     // ---------- مشاركة ----------
@@ -320,6 +345,15 @@ class ArchiveRepository(context: Context) {
         countDuplicate: Boolean = true,
         originalPath: String? = null,
         originalDate: Long? = null,
+        contentVerified: ContentVerified = ContentVerified.UNVERIFIED,
+        /** بادئة نوع المستند للاسم المؤقت (فاتورة/حوالة...)؛ null = "IMG". */
+        namePrefix: String? = null,
+        /** الاسم الأصلي في المصدر، يُحفظ للعرض فقط. */
+        originalName: String? = null,
+        /** اسم اختاره المستخدم (بلا امتداد): يُستخدم كما هو ويُقفل فلا تغيّره التسمية الذكية. */
+        preferredBaseName: String? = null,
+        /** نص قرأته بوابة الاستيراد (OCR) — يُحفظ مع الملف فلا يُعاد OCR عليه عند التحليل. */
+        ocrText: String? = null,
     ): ImportResult = withContext(Dispatchers.IO) {
         var destination: File? = null
         try {
@@ -329,6 +363,13 @@ class ArchiveRepository(context: Context) {
             val existing = imageDao.findByContentHash(hash)
             if (existing != null) {
                 if (countDuplicate) imageDao.incrementReceivedCount(existing.id)
+                // إضافة يدوية صريحة لملف مخفي (معلّق/مرفوض): يُظهَر بدل رسالة "موجود من قبل"
+                // عن ملف لا يراه المستخدم في أي شاشة.
+                if (countDuplicate && (existing.contentVerified == ContentVerified.AMBIGUOUS ||
+                        existing.contentVerified == ContentVerified.REJECTED)
+                ) {
+                    imageDao.updateContentVerified(existing.id, ContentVerified.UNVERIFIED)
+                }
                 // تملأ مسار المصدر على السجل الموجود إن كان فارغًا، حتى لا يُعاد
                 // اكتشاف نفس الملف في كل فحص (بوابة المسارات السريعة تعتمد عليه).
                 if (originalPath != null && existing.originalPath == null) {
@@ -347,7 +388,12 @@ class ArchiveRepository(context: Context) {
             val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
             val targetDir = FileUtils.dayFolder(rootDir, year, month, day)
             val ext = sourceFile.extension.ifBlank { "jpg" }
-            val baseName = "IMG_${year}${FileUtils.twoDigits(month)}${FileUtils.twoDigits(day)}_${System.currentTimeMillis() % 100000}"
+            val chosenName = preferredBaseName
+                ?.let { com.alarsheef.archive.util.ArchiveNaming.sanitize(it) }
+                ?.takeIf { it.isNotBlank() }
+            val prefix = namePrefix?.takeIf { it.isNotBlank() } ?: "IMG"
+            val baseName = chosenName
+                ?: "${prefix}_${year}${FileUtils.twoDigits(month)}${FileUtils.twoDigits(day)}_${System.currentTimeMillis() % 100000}"
             val destName = FileUtils.uniqueName(baseName, ext, targetDir)
             val destFile = File(targetDir, destName)
             destination = destFile
@@ -356,7 +402,7 @@ class ArchiveRepository(context: Context) {
             val capturedAt = dateMillis
             if (deleteSourceAfterImport) sourceFile.delete()
 
-            imageDao.insert(
+            val newId = imageDao.insert(
                 ArchivedImage(
                     fileName = destName,
                     storedPath = destFile.absolutePath,
@@ -366,9 +412,20 @@ class ArchiveRepository(context: Context) {
                     year = year, month = month, day = day,
                     importedAt = System.currentTimeMillis(),
                     capturedAt = capturedAt,
-                    originalPath = originalPath
+                    originalPath = originalPath,
+                    contentVerified = contentVerified,
+                    originalName = originalName?.takeIf { it.isNotBlank() },
+                    nameLocked = chosenName != null
                 )
             )
+            // فشل حفظ النص لا يُفشل الاستيراد — التحليل يعيد قراءته لاحقًا
+            if (!ocrText.isNullOrBlank()) {
+                runCatching {
+                    aiDao.upsertOcr(
+                        com.alarsheef.archive.data.entities.OcrText(newId, ocrText, System.currentTimeMillis())
+                    )
+                }
+            }
             ImportResult.Added
         } catch (e: Exception) {
             // لو فشل الإدراج (تضارب فهرس التفرّد عند سباق فحصين) يبقى الملف المنسوخ
@@ -391,12 +448,16 @@ class ArchiveRepository(context: Context) {
     ): ImportResult = withContext(Dispatchers.IO) {
         try {
             val ext = contentExtension(context, sourceUri)
-            val temp = File(context.cacheDir, "import_${System.nanoTime()}_$ext")
+            // نقطة لا شرطة سفلية: "import_123_png" بلا امتداد كان يُخزَّن كل ملف ".jpg"
+            val temp = File(context.cacheDir, "import_${System.nanoTime()}.$ext")
             context.contentResolver.openInputStream(sourceUri)?.use { input ->
                 temp.outputStream().use { output -> input.copyTo(output) }
             } ?: return@withContext ImportResult.Failed
             try {
-                importFile(temp, sourceApp, deleteSourceAfterImport, countDuplicate, originalPath)
+                importFile(
+                    temp, sourceApp, deleteSourceAfterImport, countDuplicate, originalPath,
+                    originalName = contentDisplayName(context, sourceUri)
+                )
             } finally {
                 runCatching { temp.delete() }
             }
@@ -405,17 +466,51 @@ class ArchiveRepository(context: Context) {
         }
     }
 
+    private fun contentDisplayName(context: Context, uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) cursor.getString(idx) else null
+            } else null
+        } ?: uri.lastPathSegment
+    }.getOrNull()
+
     private fun contentExtension(context: Context, uri: Uri): String {
-        val name = runCatching {
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx >= 0) cursor.getString(idx) else uri.lastPathSegment ?: "file"
-                } else uri.lastPathSegment ?: "file"
-            } ?: uri.lastPathSegment ?: "file"
-        }.getOrNull() ?: "file"
+        val name = contentDisplayName(context, uri) ?: "file"
         return name.substringAfterLast('.', "").ifBlank { "jpg" }
     }
+
+    /**
+     * يعيد تسمية ملف مؤرشف على القرص وفي القاعدة معًا (الاسم الجديد بلا امتداد؛ الامتداد يبقى).
+     * @param lock true للتسمية اليدوية: يُقفل الاسم فلا تغيّره إعادة التسمية الذكية لاحقًا.
+     * @return الصف المحدَّث، أو null إن فشلت العملية (يُعاد الملف لاسمه الأول عند فشل القاعدة).
+     */
+    suspend fun renameImage(image: ArchivedImage, newBaseName: String, lock: Boolean): ArchivedImage? =
+        withContext(Dispatchers.IO) {
+            val clean = com.alarsheef.archive.util.ArchiveNaming.sanitize(newBaseName)
+            if (clean.isBlank()) return@withContext null
+            val source = File(image.storedPath)
+            if (!source.exists()) return@withContext null
+            val dir = source.parentFile ?: return@withContext null
+            val ext = source.extension.ifBlank { "jpg" }
+            val locked = lock || image.nameLocked
+            if (source.nameWithoutExtension == clean) {
+                if (locked != image.nameLocked) {
+                    imageDao.renameImage(image.id, image.fileName, image.storedPath, locked)
+                }
+                return@withContext image.copy(nameLocked = locked)
+            }
+            val newName = FileUtils.uniqueName(clean, ext, dir)
+            val destination = File(dir, newName)
+            if (!source.renameTo(destination)) return@withContext null
+            try {
+                imageDao.renameImage(image.id, newName, destination.absolutePath, locked)
+            } catch (e: Exception) {
+                destination.renameTo(source)
+                return@withContext null
+            }
+            image.copy(fileName = newName, storedPath = destination.absolutePath, nameLocked = locked)
+        }
 
     /**
      * استعادة ملف من أرشيف ZIP سابق: يُثبَّت في تاريخه الأصلي
@@ -427,7 +522,11 @@ class ArchiveRepository(context: Context) {
         month: Int,
         day: Int,
         capturedAt: Long,
-        preferredName: String?
+        preferredName: String?,
+        contentVerified: ContentVerified = ContentVerified.UNVERIFIED,
+        originalName: String? = null,
+        originalPath: String? = null,
+        nameLocked: Boolean = false,
     ): ImportResult = withContext(Dispatchers.IO) {
         try {
             if (!sourceFile.exists() || sourceFile.length() == 0L) return@withContext ImportResult.Failed
@@ -454,7 +553,10 @@ class ArchiveRepository(context: Context) {
                     year = year, month = month, day = day,
                     importedAt = System.currentTimeMillis(),
                     capturedAt = capturedAt.takeIf { it > 0 } ?: System.currentTimeMillis(),
-                    originalPath = null
+                    originalPath = originalPath?.takeIf { it.isNotBlank() },
+                    contentVerified = contentVerified,
+                    originalName = originalName?.takeIf { it.isNotBlank() },
+                    nameLocked = nameLocked
                 )
             )
             ImportResult.Added
@@ -495,6 +597,84 @@ class ArchiveRepository(context: Context) {
         imageDao.updateContentVerified(id, status)
 
     suspend fun resetAiAnalysisForReanalyze() = imageDao.resetAiAnalysis()
+
+    /** النص المحفوظ للصورة (من بوابة الاستيراد أو تحليل سابق)، أو null. */
+    suspend fun ocrTextFor(imageId: Long): String? = aiDao.textForImage(imageId)
+
+    /**
+     * مستندات حُلِّلت وما زالت باسمها التلقائي لأن التصنيف السحابي (مصدر الاسم الذكي) لم
+     * ينجح لها بعد — نفدت الحصة يومها، أو انقطعت الشبكة — لإعادة المحاولة.
+     * الأحدث أولًا، ضمن ما استُورد بعد [sinceMillis].
+     */
+    suspend fun imagesAwaitingLocalTypeName(limit: Int): List<ArchivedImage> =
+        imageDao.imagesAwaitingLocalTypeName(limit).filter { ArchiveNaming.isAutoName(it.fileName) }
+
+    suspend fun processedSourcePaths(): List<String> = processedSourceDao.allPaths()
+
+    /** ملف في مجلد الإدخال اكتمل السير عليه. لا يُعلَّم التنزيل الناقص ولا الصفحة التي فشل حفظها. */
+    suspend fun markSourceProcessed(path: String) {
+        if (path.isBlank()) return
+        processedSourceDao.insert(ProcessedSource(path))
+    }
+
+    fun observeDocumentTypes(): Flow<List<DocumentType>> = documentTypeDao.observeAll()
+
+    suspend fun documentTypeRules(): List<DocumentName.UserType> =
+        documentTypeDao.all().map { DocumentName.UserType(it.name, DocumentName.splitKeywords(it.keywords)) }
+
+    /**
+     * يدرج نوعًا مرة واحدة. الاسم يُطبَّع كما يدخل أول الملف (`أمر صرف` ← `أمر-صرف`).
+     * إعادة الإضافة بنفس الاسم تدمج الكلمات. @return الاسم المخزَّن، أو null إن نقص الاسم أو الكلمة.
+     */
+    suspend fun addDocumentType(rawName: String, rawKeywords: String): String? = withContext(Dispatchers.IO) {
+        val name = ArchiveNaming.part(rawName.trim(), 32)
+        val keywords = DocumentName.splitKeywords(rawKeywords)
+        if (name.isBlank() || keywords.isEmpty()) return@withContext null
+        val stored = keywords.joinToString("\n")
+        val existing = documentTypeDao.findByName(name)
+        if (existing == null) {
+            documentTypeDao.insert(
+                DocumentType(name = name, keywords = stored, createdAt = System.currentTimeMillis())
+            )
+        } else {
+            val merged = DocumentName.splitKeywords(existing.keywords + "\n" + stored).joinToString("\n")
+            documentTypeDao.updateKeywords(existing.id, merged)
+        }
+        name
+    }
+
+    /**
+     * بعد إدراج نوع: الملفات غير المقفولة التي تحمل كلمته تأخذ الاسم الجديد.
+     * الاسم الذي قفله المستخدم لا يُمس.
+     */
+    suspend fun retitleForType(addedType: String): Int = withContext(Dispatchers.IO) {
+        val types = documentTypeRules()
+        var count = 0
+        for (image in imageDao.unlockedWithText()) {
+            val text = aiDao.textForImage(image.id) ?: continue
+            val fallback = String.format(
+                java.util.Locale.ROOT, "%04d-%02d-%02d", image.year, image.month, image.day
+            )
+            val base = ArchiveNaming.retitleBase(
+                fileName = image.fileName,
+                nameLocked = image.nameLocked,
+                ocrText = text,
+                fallbackDate = fallback,
+                userTypes = types,
+                addedType = addedType,
+                pageNumber = ImportRules.pageNumberOf(image.originalPath, image.originalName),
+            ) ?: continue
+            val updated = renameImage(image, base, lock = false)
+            if (updated != null && updated.fileName.substringBeforeLast('.') != image.fileName.substringBeforeLast('.')) {
+                count++
+            }
+        }
+        count
+    }
+
+    suspend fun smartNameCandidates(sinceMillis: Long, limit: Int): List<ArchivedImage> =
+        imageDao.getSmartNameCandidates(sinceMillis, limit)
+            .filter { com.alarsheef.archive.util.ArchiveNaming.isAutoName(it.fileName) }
 
     suspend fun saveOcrText(imageId: Long, text: String) =
         aiDao.upsertOcr(com.alarsheef.archive.data.entities.OcrText(imageId, text, System.currentTimeMillis()))
@@ -543,6 +723,8 @@ class ArchiveRepository(context: Context) {
     suspend fun renameFaceGroup(groupKey: String, name: String?) = aiDao.renameFaceGroup(groupKey, name)
 
     suspend fun deleteFaceGroup(groupKey: String) {
+        // ملفات القصّ كانت تبقى على القرص بلا أي سجل يشير إليها
+        aiDao.cropPathsForGroup(groupKey).forEach { runCatching { File(it).delete() } }
         aiDao.deleteFaceGroupMembers(groupKey)
         aiDao.deleteFaceGroup(groupKey)
     }
@@ -591,8 +773,9 @@ class ArchiveRepository(context: Context) {
                 if (textBuilder.length < 4000) textBuilder.append(it).append('\n')
             }
         }
-        // أسماء مجموعات الوجوه المسماة الظاهرة في هذه الصور تحديدًا
-        val faceNames = if (ids.isEmpty()) emptyList() else aiDao.namedGroupsForImages(ids)
+        // أسماء مجموعات الوجوه المسماة الظاهرة في هذه الصور تحديدًا — على دفعات: أكثر من 999
+        // معرّفًا في IN واحدة يتجاوز حد SQLite على أندرويد 11 فأقدم فينهار حوار التسمية.
+        val faceNames = ids.chunked(400).flatMap { aiDao.namedGroupsForImages(it) }.distinct()
         return com.alarsheef.archive.ai.NameSuggester.suggestFor(
             labels = allLabels,
             ocrText = textBuilder.toString(),
@@ -603,18 +786,18 @@ class ArchiveRepository(context: Context) {
     suspend fun importFromUri(uri: Uri, sourceApp: SourceApp): ImportResult = withContext(Dispatchers.IO) {
         var tempFile: File? = null
         try {
+            // الامتداد الحقيقي من نوع المحتوى (HEIC/GIF/AVIF كانت تُخزَّن كلها ".jpg")
             val mime = context.contentResolver.getType(uri)
-            val ext = when {
-                mime?.contains("png") == true -> "png"
-                mime?.contains("webp") == true -> "webp"
-                else -> "jpg"
-            }
+            val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
+                ?.lowercase(java.util.Locale.ROOT)
+                ?.takeIf { it in FileUtils.IMAGE_EXTENSIONS }
+                ?: "jpg"
             val temp = File(context.cacheDir, "import_${System.currentTimeMillis()}.$ext")
             tempFile = temp
             context.contentResolver.openInputStream(uri)?.use { input ->
                 temp.outputStream().use { output -> input.copyTo(output) }
             } ?: return@withContext ImportResult.Failed
-            importFile(temp, sourceApp)
+            importFile(temp, sourceApp, originalName = contentDisplayName(context, uri))
         } catch (e: Exception) {
             tempFile?.delete()
             ImportResult.Failed

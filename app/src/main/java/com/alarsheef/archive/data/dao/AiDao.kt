@@ -38,27 +38,15 @@ interface AiDao {
     suspend fun upsertOcr(ocr: OcrText)
 
     @Query("SELECT * FROM ocr_texts WHERE imageId = :imageId")
-    suspend fun getOcrByImage(imageId: Long): OcrText?
-
-    @Query("SELECT * FROM ocr_texts WHERE imageId = :imageId")
     fun observeOcrByImage(imageId: Long): Flow<OcrText?>
-
-    @Query("SELECT COUNT(*) FROM ocr_texts WHERE text LIKE '%' || :word || '%' ")
-    suspend fun countOcrContaining(word: String): Int
 
     // ---------- الوسوم التلقائية ----------
 
     @Insert
     suspend fun insertLabels(labels: List<ImageLabel>)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertLabel(label: ImageLabel)
-
     @Query("DELETE FROM image_labels WHERE imageId = :imageId")
     suspend fun deleteLabelsForImage(imageId: Long)
-
-    @Query("SELECT * FROM image_labels WHERE imageId = :imageId ORDER BY confidence DESC")
-    suspend fun getLabelsForImage(imageId: Long): List<ImageLabel>
 
     @Query("SELECT * FROM image_labels WHERE imageId = :imageId ORDER BY confidence DESC")
     fun observeLabelsForImage(imageId: Long): Flow<List<ImageLabel>>
@@ -71,9 +59,6 @@ interface AiDao {
     @Query("SELECT * FROM ai_cloud_meta WHERE imageId = :imageId")
     fun observeCloudMeta(imageId: Long): Flow<AiCloudMeta?>
 
-    @Query("SELECT * FROM ai_cloud_meta WHERE imageId = :imageId")
-    suspend fun getCloudMeta(imageId: Long): AiCloudMeta?
-
     @Query("DELETE FROM ai_cloud_meta WHERE imageId IN (:ids)")
     suspend fun deleteCloudMetaForImageIds(ids: List<Long>)
 
@@ -84,9 +69,6 @@ interface AiDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertFaceMember(member: FaceGroupMember)
-
-    @Query("SELECT * FROM face_groups")
-    fun observeFaceGroups(): Flow<List<FaceGroup>>
 
     @Query(
         """SELECT g.groupKey AS groupKey, g.name AS name, COUNT(m.id) AS memberCount,
@@ -106,6 +88,9 @@ interface AiDao {
 
     @Query("UPDATE face_groups SET name = :name WHERE groupKey = :groupKey")
     suspend fun renameFaceGroup(groupKey: String, name: String?)
+
+    @Query("SELECT cropPath FROM face_group_members WHERE groupKey = :groupKey")
+    suspend fun cropPathsForGroup(groupKey: String): List<String>
 
     @Query("DELETE FROM face_group_members WHERE groupKey = :groupKey")
     suspend fun deleteFaceGroupMembers(groupKey: String)
@@ -133,17 +118,8 @@ interface AiDao {
     @Query("DELETE FROM face_group_members WHERE imageId IN (:ids)")
     suspend fun deleteMembersForImageIds(ids: List<Long>)
 
-    @Query("SELECT COUNT(DISTINCT imageId) FROM face_group_members")
-    suspend fun countImagesWithFaces(): Int
-
-    @Query("SELECT COUNT(DISTINCT groupKey) FROM face_groups")
-    suspend fun countFaceGroups(): Int
-
     @Query("SELECT groupKey, MIN(descriptorHash) AS repHash FROM face_group_members GROUP BY groupKey")
     suspend fun faceGroupRepresentatives(): List<FaceGroupRep>
-
-    @Query("SELECT groupKey, name FROM face_groups WHERE name IS NOT NULL AND name != ''")
-    suspend fun namedFaceGroups(): List<FaceGroup>
 
     @Query(
         """SELECT DISTINCT g.name FROM face_groups g
@@ -164,7 +140,7 @@ interface AiDao {
     @Query(
         """SELECT COUNT(DISTINCT l.imageId) FROM image_labels l
            JOIN archived_images i ON l.imageId = i.id
-           WHERE l.label = 'مستند / ملف نصي' AND i.year = :year"""
+           WHERE l.label = 'مستند / ملف نصي' AND i.year = :year AND i.contentVerified NOT IN (2, 3)"""
     )
     fun observeDocumentCount(year: Int): Flow<Int>
 }
