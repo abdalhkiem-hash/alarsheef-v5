@@ -75,6 +75,13 @@ android {
         jvmTarget = "17"
     }
 
+    testOptions {
+        // اختبارات JVM تمرّ على android.util.Log (سجلات القرار) — تُعاد قيم افتراضية بدل رمي استثناء
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -111,6 +118,11 @@ dependencies {
 
     // ML Kit Face Detection (on-device) — يستثني الصور الشخصية من السحب التلقائي
     implementation("com.google.mlkit:face-detection:16.1.6")
+
+    // OCR لاتيني مدمج. يُستخدم إن لم يقرأ المحرك العربي النص.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+    // قراءة عربية على الجهاز. الإنجليزية مدمجة في المكتبة، والعربية في assets/tessdata.
+    implementation("dev.ffmpegkit-maintained:tesseract-android:5.5.0")
 
     // ML Kit Document Scanner (Google Play services) — مسح المستندات بالحواف وتصحيح المنظور
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")

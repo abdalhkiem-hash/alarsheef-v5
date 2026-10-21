@@ -1,5 +1,17 @@
 package com.alarsheef.archive.ui.screens.day
 
+import com.alarsheef.archive.ui.components.GlassPanel
+import com.alarsheef.archive.ui.components.GlassTopBar
+import com.alarsheef.archive.ui.components.GlassEmptyState
+import com.alarsheef.archive.ui.components.IconTile
+import com.alarsheef.archive.ui.components.CountBadge
+import com.alarsheef.archive.ui.theme.Accent
+import com.alarsheef.archive.ui.theme.TextMuted
+import com.alarsheef.archive.util.FeatureFlags
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -97,7 +109,7 @@ fun DayScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val labelSuggestions = rememberScopeSuggestions(repository, labelDialogScope)
 
-    val allDays = (days.map { DayRow(it.day, it.fileCount, it.lastImportedAt, it.label) } +
+    val allDays = (days.map { DayRow(it.day, it.fileCount, it.lastImportedAt, it.label, it.docCount) } +
         dayGroups.map { DayGroupRow(it.id, it.dayNumber) }
             .map { DayRow(it.dayNumber, 0, 0, null) })
         .sortedBy { it.day }
@@ -110,13 +122,22 @@ fun DayScreen(
     }
 
     fun createDay(numberStr: String) {
-        val dayNum = numberStr.toIntOrNull() ?: return
-        if (dayNum < 1 || dayNum > 31) return
+        val dayNum = numberStr.trim().toIntOrNull()
+        // أيام الشهر الفعلية (لا 31 فبراير)
+        val daysInMonth = java.util.Calendar.getInstance().apply { clear(); set(year, month - 1, 1) }
+            .getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+        if (dayNum == null || dayNum < 1 || dayNum > daysInMonth) {
+            scope.launch { snackbarHostState.showSnackbar("رقم اليوم يجب أن يكون بين 1 و$daysInMonth") }
+            return
+        }
         scope.launch {
-            repository.createDayGroup(year, month, dayNum)
+            val exists = allDays.any { it.day == dayNum } ||
+                repository.createDayGroup(year, month, dayNum) == -1L
             newDayNumber = ""
             showAddDayDialog = false
-            snackbarHostState.showSnackbar("تم إنشاء يوم $dayNum/$month/$year")
+            snackbarHostState.showSnackbar(
+                if (exists) "يوم $dayNum/$month/$year موجود مسبقًا" else "تم إنشاء يوم $dayNum/$month/$year"
+            )
         }
     }
 
@@ -165,17 +186,10 @@ fun DayScreen(
 Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("${FileUtils.monthArabicName(month)} $year") },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
+            GlassTopBar(
+                title = "${FileUtils.monthArabicName(month)} $year",
+                subtitle = "أيام الشهر التي تحتوي على ملفات",
+                onBack = onBack
             )
         },
         floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, onAddDay = { showAddDayDialog = true }, mergePagesYear = year, mergePagesMonth = month, mergePagesDay = 1) }
@@ -197,6 +211,7 @@ Scaffold(
                     items(filtered, key = { it.day }) { row ->
                         DayRowCard(
                             row = row,
+                            monthName = FileUtils.monthArabicName(month),
                             onClick = { onOpenDay(row.day) },
                             onExport = {
                                 pendingExportDay = row.day
@@ -272,6 +287,7 @@ Scaffold(
 @Composable
 private fun DayRowCard(
     row: DayRow,
+    monthName: String,
     onClick: () -> Unit,
     onExport: () -> Unit,
     onShare: () -> Unit,
@@ -279,31 +295,43 @@ private fun DayRowCard(
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(Glass, RoundedCornerShape(18.dp))
-            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    GlassPanel(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconTile(size = 56.dp) {
+                Text(
+                    "${row.day}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Accent
+                )
+            }
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                val dayLabel = String.format(java.util.Locale.ROOT, "%02d", row.day)
-                Text(row.label ?: dayLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                val time = FileUtils.formatTime(row.lastImportedAt)
-                val subtitle = if (row.label != null) {
-                    "$dayLabel · ${row.fileCount} ملف"
-                } else if (time.isNotEmpty()) {
-                    "${row.fileCount} ملف · آخر ملف $time"
-                } else {
-                    "${row.fileCount} ملف"
+                Text(
+                    row.label ?: "${row.day} $monthName",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                val photos = (row.fileCount - row.docCount).coerceAtLeast(0)
+                val parts = listOfNotNull(
+                    if (row.docCount > 0) FileUtils.countLabel(row.docCount, "مستند واحد", "مستندان", "مستندات", "مستندًا") else null,
+                    if (photos > 0) FileUtils.countLabel(photos, "صورة واحدة", "صورتان", "صور", "صورة") else null
+                )
+                val subtitle = when {
+                    row.fileCount == 0 -> "يوم يدوي — لا ملفات بعد"
+                    else -> parts.joinToString(" • ")
                 }
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+            }
+            if (row.fileCount > 0) {
+                CountBadge("${row.fileCount}")
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = TextMuted)
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("تصدير هذا اليوم (ZIP)") }, onClick = { menuOpen = false; onExport() })
@@ -318,15 +346,9 @@ private fun DayRowCard(
 
 @Composable
 private fun EmptyState(text: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.Filled.Image,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = Color.White.copy(alpha = 0.45f)
-            )
-            Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 12.dp))
-        }
-    }
+    GlassEmptyState(
+        icon = Icons.Filled.Image,
+        title = text,
+        subtitle = "اختر يومًا آخر لعرض الملفات المتاحة."
+    )
 }

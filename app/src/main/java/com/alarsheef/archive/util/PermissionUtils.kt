@@ -32,8 +32,4 @@ object PermissionUtils {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }
     }
-
-    /** تُستخدم في السجل لتحويل نتائج الطلب إلى نص واضح. */
-    fun describePermissionsResults(results: Map<String, Boolean>): String =
-        results.entries.joinToString(", ") { "${it.key.takeLastWhile { c -> c != '.' }}: ${it.value}" }
 }

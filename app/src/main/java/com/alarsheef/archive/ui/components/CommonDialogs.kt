@@ -52,9 +52,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import kotlinx.coroutines.launch
 
-private val DialogTeal = Color(0xF20F766E)
-private val DialogTealText = Color(0xFF0F766E)
-private val DialogWhite = Color(0xE6FFFFFF)
+private val DialogTeal = com.alarsheef.archive.ui.theme.PanelSurface
+private val DialogTealText = com.alarsheef.archive.ui.theme.OnAccent
+private val DialogWhite = com.alarsheef.archive.ui.theme.Accent
 
 private fun glassTitle(): Modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
 private fun glassBody(): Modifier = Modifier.fillMaxWidth()
@@ -188,6 +188,35 @@ fun NewFolderDialog(
                 value = name,
                 onValueChange = { name = it },
                 placeholder = { Text("اسم المجلد") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = FieldColors()
+            )
+        },
+        confirmButton = {
+            ConfirmButton("حفظ", onClick = { if (name.isNotBlank()) { onSave(name); onDismiss() } })
+        },
+        dismissButton = { DismissButton("إلغاء", onClick = onDismiss) }
+    )
+}
+
+@Composable
+fun RenameFileDialog(
+    initial: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = DialogTeal,
+        shape = RoundedCornerShape(24.dp),
+        title = { DialogTitle("إعادة تسمية الملف") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                placeholder = { Text("الاسم الجديد (بدون الامتداد)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 colors = FieldColors()
@@ -355,12 +384,7 @@ fun DocumentScannerSaveDialog(
     val scope = rememberCoroutineScope()
 
     var docName by remember { mutableStateOf("مستند جديد") }
-    var category by remember { mutableStateOf("مستند عام") }
-    var ocrText by remember { mutableStateOf("") }
-    var secureFolder by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
-
-    val categories = listOf("مستند عام", "فاتورة", "إيصال أو حوالة", "عقد", "هوية", "ملاحظات")
 
     AlertDialog(
         onDismissRequest = { if (!loading) onDismiss() },
@@ -377,43 +401,6 @@ fun DocumentScannerSaveDialog(
                     modifier = Modifier.fillMaxWidth(),
                     colors = FieldColors()
                 )
-
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = { Text("التصنيف", color = Color.White.copy(alpha = 0.7f)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = FieldColors(),
-                    trailingIcon = { Icon(Icons.Filled.ExpandMore, contentDescription = null, tint = Color.White.copy(alpha = 0.7f)) }
-                )
-
-                OutlinedTextField(
-                    value = ocrText,
-                    onValueChange = { ocrText = it },
-                    label = { Text("النص المستخرج (OCR)", color = Color.White.copy(alpha = 0.7f)) },
-                    modifier = Modifier.fillMaxWidth().height(100.dp),
-                    colors = FieldColors(),
-                    maxLines = 6,
-                    singleLine = false
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = secureFolder,
-                        onCheckedChange = { secureFolder = it },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = Color.White,
-                            checkmarkColor = DialogTealText,
-                            uncheckedColor = Color.White.copy(alpha = 0.7f)
-                        )
-                    )
-                    Text("حفظ في المجلد الآمن 🔒", color = Color.White, fontSize = 14.sp)
-                }
 
                 if (loading) {
                     Row(
@@ -450,7 +437,7 @@ fun DocumentScannerSaveDialog(
                         ConfirmButton("حفظ المستند ✓", onClick = {
                             loading = true
                             scope.launch {
-                                onSave(docName.trim().ifBlank { "مستند جديد" }, category, ocrText.trim(), secureFolder)
+                                onSave(docName.trim().ifBlank { "مستند جديد" }, "مستند عام", "", false)
                                 onDismiss()
                             }
                         })

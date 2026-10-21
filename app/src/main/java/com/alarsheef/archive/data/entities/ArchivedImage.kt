@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-enum class SourceApp { WHATSAPP, WHATSAPP_BUSINESS, GALLERY, DOWNLOADS, MANUAL_CAMERA, MANUAL_IMPORT, DOCUMENT_SCAN }
+enum class SourceApp { WHATSAPP, WHATSAPP_BUSINESS, GALLERY, DOWNLOADS, MANUAL_CAMERA, MANUAL_IMPORT, DOCUMENT_SCAN, INBOX }
 
 /**
  * حالة التحقق النصي للمحتوى:
@@ -66,7 +66,19 @@ data class ArchivedImage(
 
     /**
      * حالة التحقق النصي للمحتوى (0=غير متحقق، 1=مقبول، 2=معلّق، 3=مرفوض).
-     * يُحدَّث في AiAnalysisWorker بعد OCR عبر DocumentContentGate.verify().
+     * يُحدَّد قبل الاستيراد في FileScannerWorker عبر ContentGate/DocumentContentGate (OCR + دلائل نصية).
+     * الأرشيف القديم والاستيراد اليدوي = UNVERIFIED ويبقيان ظاهرين؛ المعلّق/المرفوض يُخفيان من الشاشات العادية.
      */
-    val contentVerified: ContentVerified = ContentVerified.UNVERIFIED
+    val contentVerified: ContentVerified = ContentVerified.UNVERIFIED,
+
+    /**
+     * الاسم الأصلي في المصدر (مثل "WhatsApp Image 2026-09-25 at 10.31.22.jpeg") حين
+     * يُسمّى الملف تلقائيًا. null = لا اسم أصلي معروف أو الاسم المحفوظ هو الأصلي.
+     */
+    val originalName: String? = null,
+
+    /**
+     * true = اسم اختاره المستخدم يدويًا، فلا تُغيّره أي إعادة تسمية تلقائية (Gemini).
+     */
+    val nameLocked: Boolean = false
 )

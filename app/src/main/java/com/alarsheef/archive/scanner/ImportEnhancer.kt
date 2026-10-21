@@ -102,7 +102,7 @@ object ImportEnhancer {
         val minX = min(min(tlX, trX), min(brX, blX))
         val maxX = max(max(tlX, trX), max(brX, blX))
         val minY = min(min(tlY, trY), min(brY, blY))
-        val maxY = max(max(tlY, trY), max(blY, blY))
+        val maxY = max(max(tlY, trY), max(brY, blY))
         if (maxX - minX < 32f || maxY - minY < 32f) return null
         var outW = (maxX - minX).toInt()
         var outH = (maxY - minY).toInt()

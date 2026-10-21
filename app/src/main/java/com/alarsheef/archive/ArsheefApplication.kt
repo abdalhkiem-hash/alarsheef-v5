@@ -25,7 +25,6 @@ class ArsheefApplication : Application() {
             if (prefs.autoImport.first()) {
                 WorkScheduler.scheduleDailyScan(this@ArsheefApplication)
             }
-
             if (prefs.backupEnabled.first()) {
                 val folderUri = prefs.backupFolderUri.first()
                 if (folderUri != null) {

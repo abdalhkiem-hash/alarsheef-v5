@@ -42,8 +42,11 @@ object PdfToImageConverter {
      * (≈ 15 ميجابايت لصفحة A4 عند 200 DPI) بتصيير صفحة واحدة في كل دورة
      * وبتقليص الممتد فوق سقف الحد الأقصى الآمن.
      */
-    fun convertToPngPages(context: Context, pdfFile: File): List<File> {
-        val results = mutableListOf<File>()
+    /** صفحة رُسمت بنجاح. [pageNumber] رقمها داخل الملف، بدءًا من 1، ولا يتغيّر إذا سقطت صفحة قبلها. */
+    data class RenderedPage(val pageNumber: Int, val file: File)
+
+    fun convertToPngPages(context: Context, pdfFile: File): List<RenderedPage> {
+        val results = mutableListOf<RenderedPage>()
         var pfd: ParcelFileDescriptor? = null
         var renderer: PdfRenderer? = null
 
@@ -80,7 +83,7 @@ object PdfToImageConverter {
                     FileOutputStream(outFile).use { out ->
                         bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                     }
-                    results.add(outFile)
+                    results.add(RenderedPage(pageNumber = i + 1, file = outFile))
                 } catch (e: OutOfMemoryError) {
                     // صفحة كبيرة جدًا — نتخطاها ونكمل بالباقي
                     Log.w(TAG, "OOM لتصيير الصفحة $i: ${e.message}")

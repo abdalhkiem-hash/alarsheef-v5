@@ -6,22 +6,27 @@ import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.alarsheef.archive.data.AppDatabase.Companion.MIGRATION_1_2
-import com.alarsheef.archive.data.AppDatabase.Companion.MIGRATION_2_3
-import com.alarsheef.archive.data.AppDatabase.Companion.MIGRATION_3_4
+import androidx.room.testing.MigrationTestHelper
+import androidx.test.platform.app.InstrumentationRegistry
+import com.alarsheef.archive.data.entities.ContentVerified
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
  * اختبارات الترحيل على ملف SQLite حقيقي (دون الاعتماد على مخططات Room القديمة
  * التي لم تُصدَّر سابقًا): نبني قاعدة بـ user_version القديم يدويًا، ثم نفتحها
- * عبر Room مع سلسلة الترحيلات الكاملة ونتحقق من النتيجة النهائية v4.
+ * عبر Room مع سلسلة الترحيلات الكاملة حتى الإصدار الحالي. فتح القاعدة نفسه هو
+ * التحقق الأهم: Room يطابق المخطط الناتج مع الكيانات ويرمي استثناء عند أي فرق.
+ *
+ * كانت تُفتح بترحيلات 1→4 فقط، فمنذ الإصدار 5 تفشل كلها بـ"ترحيل ناقص" ولا تختبر شيئًا.
  *
  * متطلب التنفيذ: جهاز/محاكّي Android.
  */
@@ -30,6 +35,13 @@ class AppDatabaseMigrationTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val dbName = "migration-test.db"
+
+    /** ينشئ قواعد الإصدارات المصدَّرة (app/schemas) — يُستخدم لاختبار 8→الحالي. */
+    @get:Rule
+    val helper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        AppDatabase::class.java
+    )
 
     @After
     fun tearDown() {
@@ -105,7 +117,7 @@ class AppDatabaseMigrationTest {
 
     private fun openWithMigrations(): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(*AppDatabase.ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
 
@@ -213,6 +225,74 @@ class AppDatabaseMigrationTest {
             assertEquals(1, rowsCount(schema, "custom_labels"))
             // البيانات غير المحلَّلة بعد تبقى null
             assertTrue(rows.all { it.aiAnalyzedAt == null })
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * 8→الحالي على قاعدة من المخطط المصدَّر: إعادة بناء الجدول في 8→9 ثم عمودا 10→11.
+     * يكشف أي فهرس/عمود زائد يتركه ترحيل (Room يرفض الفتح)، ويتحقق من بقاء البيانات.
+     */
+    @Test
+    fun migrate8ToCurrent_keepsDataAndPassesRoomValidation() {
+        helper.createDatabase(dbName, 8).apply {
+            execSQL(
+                "INSERT INTO archived_images " +
+                    "(fileName, storedPath, contentHash, sourceApp, receivedCount, year, month, day, " +
+                    "importedAt, capturedAt, originalPath, aiAnalyzedAt) " +
+                    "VALUES ('v8.jpg', '/x/v8.jpg', 'hash8', 'GALLERY', 2, 2026, 9, 30, 5, 6, 'DCIM/Camera/v8.jpg', 77)"
+            )
+            execSQL("INSERT INTO custom_labels (scopeKey, label) VALUES ('m-2026-9', 'سبتمبر العمل')")
+            close()
+        }
+
+        val db = openWithMigrations()
+        try {
+            // أول وصول يشغّل الترحيلات والتحقق من المخطط — يرمي لو لم تطابق الكيانات
+            val schema = db.openHelper.writableDatabase
+            assertEquals(1, rowsCount(schema, "archived_images"))
+            assertTrue(tableColumns(schema, "archived_images").containsAll(listOf("contentVerified", "originalName", "nameLocked")))
+            assertFalse(
+                "فهرس لا يعلنه الكيان يُسقط التحقق",
+                objectExists(schema, "index", "index_archived_images_contentVerified")
+            )
+            assertTrue(objectExists(schema, "index", "index_archived_images_contentHash"))
+            assertTrue(objectExists(schema, "index", "index_archived_images_originalPath"))
+
+            val row = runBlocking { db.archivedImageDao().getAllOnce() }.single()
+            assertEquals("v8.jpg", row.fileName)
+            assertEquals("hash8", row.contentHash)
+            assertEquals(2, row.receivedCount)
+            assertEquals("DCIM/Camera/v8.jpg", row.originalPath)
+            assertEquals(77L, row.aiAnalyzedAt)
+            assertEquals(ContentVerified.UNVERIFIED, row.contentVerified)
+            assertNull(row.originalName)
+            assertFalse(row.nameLocked)
+
+            val labels = runBlocking { db.customLabelDao().observeAll().first() }
+            assertEquals("سبتمبر العمل", labels.single().label)
+        } finally {
+            db.close()
+        }
+    }
+
+    /** قاعدة قديمة جدًا (v1) تصل للإصدار الحالي وتقبل الإدراج والاستعلام بالأعمدة الجديدة. */
+    @Test
+    fun migrate1ToCurrent_databaseIsFullyUsable() {
+        createDatabaseAtVersion(1) {
+            insertV1V2(this, "old.jpg", "oldhash")
+        }
+
+        val db = openWithMigrations()
+        try {
+            val dao = db.archivedImageDao()
+            val rows = runBlocking { dao.getAllOnce() }
+            assertEquals("old.jpg", rows.single().fileName)
+            runBlocking { dao.claimOriginalPath(rows.single().id, "Download/old.jpg") }
+            assertEquals(listOf("Download/old.jpg"), runBlocking { dao.findAllOriginalPaths() })
+            assertTrue(runBlocking { db.subFolderDao().observeByMonth(2026, 1).first() }.isEmpty())
+            assertTrue(runBlocking { db.dayGroupDao().observeByMonth(2026, 1).first() }.isEmpty())
         } finally {
             db.close()
         }

@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.alarsheef.archive.ai.GeminiRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 
@@ -30,6 +31,8 @@ class SettingsPreferences(private val context: Context) {
         /** استيراد المستندات فقط (يرفض الصور العائلية والمناظر). */
         val DOCUMENTS_ONLY = booleanPreferencesKey("documents_only")
         val LAST_SCAN_AT = longPreferencesKey("last_scan_at")
+        /** تحذير آخر فحص (صلاحية مجلد الإدخال منتهية مثلًا)؛ null = لا تحذير. */
+        val SCAN_WARNING = stringPreferencesKey("scan_warning")
         val AI_OCR_ENABLED = booleanPreferencesKey("ai_ocr_enabled")
         val AI_LABELS_ENABLED = booleanPreferencesKey("ai_labels_enabled")
         val AI_FACES_ENABLED = booleanPreferencesKey("ai_faces_enabled")
@@ -41,18 +44,12 @@ class SettingsPreferences(private val context: Context) {
         val GEMINI_QUOTA_DATE = stringPreferencesKey("gemini_quota_date")
         /** عدد الاستدعاءات السحابية المستهلكة اليوم. */
         val GEMINI_QUOTA_USED = longPreferencesKey("gemini_quota_used")
-        /** معرّف شجرة SAF لمجلد صور واتساب (يختاره المستخدم). */
-        val WHATSAPP_IMAGES_TREE_URI = stringPreferencesKey("whatsapp_images_tree_uri")
         /** معرّف شجرة SAF لمجلد وثائق واتساب. */
         val WHATSAPP_DOCUMENTS_TREE_URI = stringPreferencesKey("whatsapp_documents_tree_uri")
-        /** معرّف شجرة SAF لمجلد صور واتساب أعمال. */
-        val WHATSAPP_BUSINESS_IMAGES_TREE_URI = stringPreferencesKey("whatsapp_business_images_tree_uri")
         /** معرّف شجرة SAF لمجلد وثائق واتساب أعمال. */
         val WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI = stringPreferencesKey("whatsapp_business_documents_tree_uri")
         /** معرّف شجرة SAF لمجلد التنزيلات. */
         val DOWNLOADS_TREE_URI = stringPreferencesKey("downloads_tree_uri")
-        /** تفعيل التحقق النصي من محتوى المستند (افتراضي مفعّل). */
-        val CONTENT_VERIFICATION_ENABLED = booleanPreferencesKey("content_verification_enabled")
         /** قصّ حدود المستند تلقائيًا عند الاستيراد من المعرض (افتراضي مفعّل). */
         val IMPORT_AUTO_CROP = booleanPreferencesKey("import_auto_crop")
         /** تحسين الصورة تلقائيًا عند الاستيراد (تباين/إزالة ظل) — افتراضي مفعّل. */
@@ -67,7 +64,6 @@ class SettingsPreferences(private val context: Context) {
     val importFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.IMPORT_FOLDER_URI] }
     val importAutoCrop: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_CROP] ?: true }
     val importAutoEnhance: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_ENHANCE] ?: true }
-    val contentVerificationEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.CONTENT_VERIFICATION_ENABLED] ?: true }
     val backupEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.BACKUP_ENABLED] ?: false }
     val backupFrequency: Flow<String> = context.appDataStore.data.map { it[Keys.BACKUP_FREQUENCY] ?: "daily" }
     val backupFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.BACKUP_FOLDER_URI] }
@@ -88,12 +84,8 @@ class SettingsPreferences(private val context: Context) {
         val used = if (prefs[Keys.GEMINI_QUOTA_DATE] == today) prefs[Keys.GEMINI_QUOTA_USED] ?: 0L else 0L
         GeminiQuota(used = used, limit = GeminiRepository.DAILY_LIMIT)
     }
-    /** معرّف شجرة SAF لصور واتساب (null إذا لم يُختار بعد). */
-    val whatsappImagesTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.WHATSAPP_IMAGES_TREE_URI] }
     /** معرّف شجرة SAF لوثائق واتساب. */
     val whatsappDocumentsTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.WHATSAPP_DOCUMENTS_TREE_URI] }
-    /** معرّف شجرة SAF لصور واتساب أعمال. */
-    val whatsappBusinessImagesTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.WHATSAPP_BUSINESS_IMAGES_TREE_URI] }
     /** معرّف شجرة SAF لوثائق واتساب أعمال. */
     val whatsappBusinessDocumentsTreeUri: Flow<String?> = context.appDataStore.data.map { it[Keys.WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI] }
     /** معرّف شجرة SAF لمجلد التنزيلات. */
@@ -117,17 +109,37 @@ class SettingsPreferences(private val context: Context) {
     suspend fun setDocumentsOnly(v: Boolean) { context.appDataStore.edit { it[Keys.DOCUMENTS_ONLY] = v } }
     suspend fun setImportAutoCrop(v: Boolean) { context.appDataStore.edit { it[Keys.IMPORT_AUTO_CROP] = v } }
     suspend fun setImportAutoEnhance(v: Boolean) { context.appDataStore.edit { it[Keys.IMPORT_AUTO_ENHANCE] = v } }
+    /** لحظة آخر فحص استيراد ناجح (0 = لم يُجرَ فحص بعد). */
+    val lastScanAt: Flow<Long> = context.appDataStore.data.map { it[Keys.LAST_SCAN_AT] ?: 0L }
     suspend fun setLastScanAt(v: Long) { context.appDataStore.edit { it[Keys.LAST_SCAN_AT] = v } }
+    /** نص تحذير يُعرض في الرئيسية حتى يُصحَّح (وتُرفع حين ينجح الفحص كله). */
+    val scanWarning: Flow<String?> = context.appDataStore.data.map { it[Keys.SCAN_WARNING] }
+    suspend fun setScanWarning(v: String?) {
+        context.appDataStore.edit { if (v == null) it.remove(Keys.SCAN_WARNING) else it[Keys.SCAN_WARNING] = v }
+    }
     suspend fun setAiOcrEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_OCR_ENABLED] = v } }
-    suspend fun setContentVerificationEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.CONTENT_VERIFICATION_ENABLED] = v } }
     suspend fun setAiLabelsEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_LABELS_ENABLED] = v } }
     suspend fun setAiFacesEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.AI_FACES_ENABLED] = v } }
     suspend fun setGeminiCloudEnabled(v: Boolean) { context.appDataStore.edit { it[Keys.GEMINI_CLOUD_ENABLED] = v } }
     suspend fun setGeminiUsePro(v: Boolean) { context.appDataStore.edit { it[Keys.GEMINI_USE_PRO] = v } }
 
+    /** هل بقي في حصة اليوم مكان لنداء، بدون خصم. */
+    suspend fun hasGeminiQuota(limit: Int): Boolean {
+        val today = LocalDate.now().toString()
+        val prefs = context.appDataStore.data.first()
+        val used = if (prefs[Keys.GEMINI_QUOTA_DATE] != today) 0L else prefs[Keys.GEMINI_QUOTA_USED] ?: 0L
+        return used < limit
+    }
+
     /**
-     * يحجز محاولة واحدة من الحصة اليومية قبل أي استدعاء سحابي.
-     * @return true إذا استُهلكت المحاولة، false إذا انتهى حد اليوم (يُحترم بلا استثناء).
+     * يخصم محاولة بعد رد سحابي ناجح فقط.
+     * @return true إذا سُجّلت المحاولة، false إذا انتهى حد اليوم.
+     */
+    suspend fun commitGeminiQuota(limit: Int): Boolean = tryConsumeGeminiQuota(limit)
+
+    /**
+     * يخصم محاولة واحدة. يُستدعى بعد النجاح، لا قبله.
+     * @return true إذا استُهلكت المحاولة، false إذا انتهى حد اليوم.
      */
     suspend fun tryConsumeGeminiQuota(limit: Int): Boolean {
         val today = LocalDate.now().toString()
@@ -145,14 +157,8 @@ class SettingsPreferences(private val context: Context) {
         }
         return allowed
     }
-    suspend fun setWhatsappImagesTreeUri(v: String?) {
-        context.appDataStore.edit { if (v == null) it.remove(Keys.WHATSAPP_IMAGES_TREE_URI) else it[Keys.WHATSAPP_IMAGES_TREE_URI] = v }
-    }
     suspend fun setWhatsappDocumentsTreeUri(v: String?) {
         context.appDataStore.edit { if (v == null) it.remove(Keys.WHATSAPP_DOCUMENTS_TREE_URI) else it[Keys.WHATSAPP_DOCUMENTS_TREE_URI] = v }
-    }
-    suspend fun setWhatsappBusinessImagesTreeUri(v: String?) {
-        context.appDataStore.edit { if (v == null) it.remove(Keys.WHATSAPP_BUSINESS_IMAGES_TREE_URI) else it[Keys.WHATSAPP_BUSINESS_IMAGES_TREE_URI] = v }
     }
     suspend fun setWhatsappBusinessDocumentsTreeUri(v: String?) {
         context.appDataStore.edit { if (v == null) it.remove(Keys.WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI) else it[Keys.WHATSAPP_BUSINESS_DOCUMENTS_TREE_URI] = v }

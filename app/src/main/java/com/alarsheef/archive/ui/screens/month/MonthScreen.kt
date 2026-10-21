@@ -1,5 +1,18 @@
 package com.alarsheef.archive.ui.screens.month
 
+import com.alarsheef.archive.ui.components.GlassPanel
+import com.alarsheef.archive.ui.components.GlassTopBar
+import com.alarsheef.archive.ui.components.GlassEmptyState
+import com.alarsheef.archive.ui.components.IconTile
+import com.alarsheef.archive.ui.components.CountBadge
+import com.alarsheef.archive.ui.theme.Accent
+import com.alarsheef.archive.ui.theme.TextMuted
+import com.alarsheef.archive.util.FeatureFlags
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -92,7 +105,6 @@ fun MonthScreen(
     var confirmDeleteMonth by remember { mutableStateOf<Int?>(null) }
     var labelDialogScope by remember { mutableStateOf<String?>(null) }
     var pendingExportMonth by remember { mutableStateOf<Int?>(null) }
-    var pendingTreeTarget by remember { mutableStateOf<String?>(null) }
     var showSubFolderDialog by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var newSubFolderName by remember { mutableStateOf("") }
@@ -159,45 +171,10 @@ fun MonthScreen(
         }
     }
 
-    val treeLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        val target = pendingTreeTarget
-        pendingTreeTarget = null
-        if (uri != null && target != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            }
-            scope.launch {
-                when (target) {
-                    "import_custom" -> {
-                        val prefs = SettingsPreferences(context)
-                        prefs.setImportFolderUri(uri.toString())
-                    }
-                }
-                snackbarHostState.showSnackbar("تم اختيار المجلد")
-            }
-        }
-    }
-
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("أرشيف سنة $year") },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
-            )
+            GlassTopBar(title = "$year", subtitle = "قائمة الأشهر", onBack = onBack)
         },
         floatingActionButton = { AddFab(repository = repository, snackbarHostState = snackbarHostState, scope = scope, onAddFolder = { showNewFolderDialog = true }, mergePagesYear = year, mergePagesMonth = 1, mergePagesDay = 1) }
     ) { padding ->
@@ -299,33 +276,54 @@ private fun MonthRowCard(
     onAddSubFolder: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(Glass, RoundedCornerShape(18.dp))
-            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    GlassPanel(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconTile(size = 52.dp) {
+                Icon(Icons.Filled.CalendarMonth, contentDescription = null, tint = Accent)
+            }
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(row.label ?: FileUtils.monthArabicName(row.month), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                val subtitle = if (row.label != null) {
-                    "${FileUtils.monthArabicName(row.month)} · ${row.fileCount} ملف"
-                } else {
-                    "${row.fileCount} ملف"
+                Text(
+                    row.label ?: FileUtils.monthArabicName(row.month),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                val last = row.lastImportedAt?.let { "آخر إضافة: ${FileUtils.relativeTime(it)}" }
+                val subtitle = listOfNotNull(
+                    if (row.label != null) FileUtils.monthArabicName(row.month) else null,
+                    last
+                ).joinToString(" · ")
+                if (subtitle.isNotEmpty()) {
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 }
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+            }
+            Box(modifier = Modifier.width(1.dp).height(36.dp).background(GlassBorder))
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "${row.fileCount}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Accent
+                )
+                Text("ملف", style = MaterialTheme.typography.bodySmall, color = TextMuted)
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = TextMuted)
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("تصدير هذا الشهر (ZIP)") }, onClick = { menuOpen = false; onExport() })
                     DropdownMenuItem(text = { Text("مشاركة كل ملفات الشهر") }, onClick = { menuOpen = false; onShare() })
                     DropdownMenuItem(text = { Text("تسمية مخصصة") }, onClick = { menuOpen = false; onLabel() })
-                    DropdownMenuItem(text = { Text("إضافة مجلد فرعي") }, onClick = { menuOpen = false; onAddSubFolder() })
+                    if (FeatureFlags.SUB_FOLDERS_ENABLED) {
+                        DropdownMenuItem(text = { Text("إضافة مجلد فرعي") }, onClick = { menuOpen = false; onAddSubFolder() })
+                    }
                     DropdownMenuItem(text = { Text("حذف", color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; onDelete() })
                 }
             }
@@ -335,15 +333,5 @@ private fun MonthRowCard(
 
 @Composable
 private fun EmptyState(text: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.Filled.CalendarViewDay,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = Color.White.copy(alpha = 0.45f)
-            )
-            Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 12.dp))
-        }
-    }
+    GlassEmptyState(icon = Icons.Filled.CalendarViewDay, title = text)
 }

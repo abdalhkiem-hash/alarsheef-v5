@@ -88,9 +88,9 @@ fun ArsheefRoot(repository: ArchiveRepository) {
             val w = size.width
             val h = size.height
             // مواضع الكرات كما في معاينة B: تركوازي أعلى اليسار، بنفسجي أسفل اليمين، كهرماني يسار الوسط
-            glow(GlowCyan, w * 0.10f, h * 0.04f, w * 0.85f, 0.50f)
-            glow(GlowIndigo, w * 0.92f, h * 0.82f, w * 0.95f, 0.60f)
-            glow(Amber, w * 0.02f, h * 0.66f, w * 0.65f, 0.22f)
+            glow(GlowCyan, w * 0.10f, h * 0.04f, w * 0.85f, 0.30f)
+            glow(GlowIndigo, w * 0.92f, h * 0.82f, w * 0.95f, 0.40f)
+            glow(Amber, w * 0.02f, h * 0.66f, w * 0.65f, 0.10f)
         }
 
         when (onboardingDone) {
@@ -112,6 +112,7 @@ fun ArsheefNavGraph(repository: ArchiveRepository) {
                 repository = repository,
                 onOpenYear = { year -> navController.navigate(Screen.Month.build(year)) },
                 onOpenFaces = { navController.navigate(Screen.Faces.route) },
+                onOpenPending = { navController.navigate(Screen.Pending.route) },
                 onOpenImage = { img ->
                     navController.navigate(
                         Screen.Files.build(img.year, img.month, img.day, openImageId = img.id)
@@ -173,6 +174,16 @@ fun ArsheefNavGraph(repository: ArchiveRepository) {
                 month = month,
                 day = day,
                 openImageId = openImageId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Pending.route) {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val settingsPrefs = remember { com.alarsheef.archive.settings.SettingsPreferences(ctx) }
+            com.alarsheef.archive.ui.screens.pending.PendingReviewScreen(
+                repository = repository,
+                settingsPrefs = settingsPrefs,
                 onBack = { navController.popBackStack() }
             )
         }

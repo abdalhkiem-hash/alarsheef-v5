@@ -17,11 +17,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.scanner.WorkScheduler
 import com.alarsheef.archive.settings.SettingsPreferences
 import com.alarsheef.archive.ui.theme.GlassBorder
@@ -70,7 +76,7 @@ internal fun SettingRow(label: String, checked: Boolean, onChange: (Boolean) -> 
             onCheckedChange = onChange,
             colors = SwitchDefaults.colors(
                 checkedTrackColor = TealBright,
-                checkedThumbColor = Color.White,
+                checkedThumbColor = com.alarsheef.archive.ui.theme.OnAccent,
                 checkedBorderColor = Color.Transparent,
                 uncheckedTrackColor = Color.White.copy(alpha = 0.3f),
                 uncheckedThumbColor = Color.White,
@@ -100,8 +106,8 @@ internal fun BtnFull(text: String, onClick: () -> Unit, modifier: Modifier = Mod
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White.copy(alpha = 0.9f),
-            contentColor = Color(0xFF0F766E)
+            containerColor = com.alarsheef.archive.ui.theme.Accent,
+            contentColor = com.alarsheef.archive.ui.theme.OnAccent
         )
     ) {
         Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
@@ -130,10 +136,10 @@ internal fun SegChip(label: String, selected: Boolean, modifier: Modifier = Modi
         textAlign = TextAlign.Center,
         style = MaterialTheme.typography.bodyMedium,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-        color = if (selected) Color(0xFF0F766E) else Color.White,
+        color = if (selected) com.alarsheef.archive.ui.theme.OnAccent else Color.White,
         modifier = modifier
             .background(
-                if (selected) Color.White.copy(alpha = 0.9f) else GlassSoft,
+                if (selected) com.alarsheef.archive.ui.theme.Accent else GlassSoft,
                 RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onClick)
@@ -157,75 +163,131 @@ internal fun NoteSmall(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun SettingsPanelContent(
     prefs: SettingsPreferences,
+    repository: ArchiveRepository,
     scope: CoroutineScope,
     onPickImportFolder: () -> Unit,
-    onPickWhatsappDocs: () -> Unit,
-    onPickWhatsappBizDocs: () -> Unit,
-    onPickDownloads: () -> Unit,
 ) {
     val context = LocalContext.current
     val autoImport by prefs.autoImport.collectAsStateWithLifecycle(initialValue = true)
-    val whatsapp by prefs.sourceWhatsapp.collectAsStateWithLifecycle(initialValue = true)
-    val whatsappBusiness by prefs.sourceWhatsappBusiness.collectAsStateWithLifecycle(initialValue = true)
-    val gallery by prefs.sourceGallery.collectAsStateWithLifecycle(initialValue = true)
-    val downloads by prefs.sourceDownloads.collectAsStateWithLifecycle(initialValue = true)
-    val excludePersonal by prefs.excludePersonalPhotos.collectAsStateWithLifecycle(initialValue = true)
-    val documentsOnly by prefs.documentsOnly.collectAsStateWithLifecycle(initialValue = true)
     val importFolderUri by prefs.importFolderUri.collectAsStateWithLifecycle(initialValue = null)
+    val documentTypes by repository.observeDocumentTypes().collectAsStateWithLifecycle(initialValue = emptyList())
+    var typeName by remember { mutableStateOf("") }
+    var typeKeywords by remember { mutableStateOf("") }
+    var typeMessage by remember { mutableStateOf<String?>(null) }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color.White,
+        cursorColor = Color.White,
+        focusedBorderColor = Color.White.copy(alpha = 0.6f),
+        unfocusedBorderColor = Color.White.copy(alpha = 0.35f),
+        focusedLabelColor = Color.White.copy(alpha = 0.85f),
+        unfocusedLabelColor = Color.White.copy(alpha = 0.65f),
+    )
 
     Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
         PanelTitle("الإعدادات")
         SettingRow("الاستيراد التلقائي اليومي", autoImport) { enabled ->
-            scope.launch { prefs.setAutoImport(enabled) }
-            if (enabled) {
-                WorkScheduler.scheduleDailyScan(context)
-                WorkScheduler.runOnce(context)
-            } else {
-                WorkScheduler.cancelDailyScan(context)
+            scope.launch {
+                prefs.setAutoImport(enabled)
+                if (enabled) {
+                    WorkScheduler.scheduleDailyScan(context)
+                    WorkScheduler.runOnce(context)
+                } else {
+                    WorkScheduler.cancelDailyScan(context)
+                }
             }
         }
 
-        SubHead("مصادر السحب")
-        SettingRow("واتساب", whatsapp) { scope.launch { prefs.setSourceWhatsapp(it) } }
-        SettingRow("واتساب أعمال", whatsappBusiness) { enabled ->
-            scope.launch { prefs.setSourceWhatsappBusiness(enabled) }
-            // صور الأعمال تُسحب من MediaStore بمفتاح المصدر فقط (بلا اختيار SAF) —
-            // تشغيل الفحص فورًا يُظهر النتيجة مباشرة عند التفعيل.
-            if (enabled) WorkScheduler.runOnce(context)
-        }
-        SettingRow("الاستديو / المعرض", gallery) { scope.launch { prefs.setSourceGallery(it) } }
-        SettingRow("الملفات / التنزيلات", downloads) { scope.launch { prefs.setSourceDownloads(it) } }
-
-        SubHead("فلترة المحتوى")
-        SettingRow("استثناء الصور الشخصية/العائلية (كشف الوجوه)", excludePersonal) {
-            scope.launch { prefs.setExcludePersonalPhotos(it) }
-        }
-        SettingRow("استيراد المستندات فقط (فواتير/حوالات)", documentsOnly) {
-            scope.launch { prefs.setDocumentsOnly(it) }
-        }
-
-        SubHead("مجلدات الوثائق (SAF)")
+        SubHead("واتساب أعمال")
         Text(
-            "اخترها من منتقي النظام — الصور تُستورد تلقائيًا عبر MediaStore.",
+            "صور إشعارات الحوالات والمستندات وملفات PDF التي تصل اليوم إلى واتساب أعمال تُؤرشف. واتساب العادي والمعرض والتنزيلات لا تُفحص. الإضافة اليدوية تبقى من زر الإضافة.",
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.65f),
-            modifier = Modifier.padding(bottom = 8.dp)
+            color = Color.White.copy(alpha = 0.75f),
         )
-        BtnOutline("تحديد مجلد وثائق واتساب", onPickWhatsappDocs, Modifier.padding(top = 4.dp))
-        BtnOutline("تحديد مجلد وثائق واتساب أعمال", onPickWhatsappBizDocs, Modifier.padding(top = 8.dp))
-        BtnOutline("تحديد مجلد التنزيلات", onPickDownloads, Modifier.padding(top = 8.dp))
         Spacer(Modifier.height(14.dp))
-        BtnFull("فحص الآن يدويًا", onClick = {
-            WorkScheduler.runOnce(context)
-            android.widget.Toast.makeText(context, "بدأ الفحص الآن — قد يستغرق دقيقة", android.widget.Toast.LENGTH_SHORT).show()
-        })
+        SubHead("مجلد الإدخال")
+        Text(
+            "اختياري. ضع فيه ملف اليوم إن لم يصل عبر واتساب أعمال. ما تاريخه قبل اليوم يُترك في المجلد.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.75f),
+        )
         BtnOutline(
-            if (importFolderUri != null) "تغيير مجلد الاستيراد المخصص" else "تحديد مجلد الاستيراد المخصص",
+            if (importFolderUri != null) "تغيير مجلد الإدخال" else "اختيار مجلد الإدخال",
             onPickImportFolder,
             Modifier.padding(top = 8.dp)
         )
         if (importFolderUri != null) {
-            NoteSmall("سيُفحص هذا المجلد يوميًا ضمن الفحص التلقائي.")
+            NoteSmall("يُفحص هذا المجلد يوميًا، ويُؤرشف ملف اليوم فقط. الملف الناقص يُترك حتى يكتمل.")
+        } else {
+            NoteSmall("بلا مجلد يبقى الفحص على واتساب أعمال فقط.")
+        }
+        Spacer(Modifier.height(14.dp))
+        BtnFull("فحص الآن", onClick = {
+            WorkScheduler.runOnce(context)
+            android.widget.Toast.makeText(
+                context,
+                "بدأ فحص واتساب أعمال",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        })
+
+        SubHead("نوع مستند جديد")
+        Text(
+            "الأنواع الجاهزة: إشعار دائن، إشعار مدين، فاتورة، حوالة، إيصال، حركة صندوق، عقد، هوية. نوع آخر يُدرج مرة واحدة: اسمه في أول الملف، وكلمة تظهر على الورقة.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.75f),
+        )
+        OutlinedTextField(
+            value = typeName,
+            onValueChange = { typeName = it },
+            label = { Text("اسم النوع") },
+            placeholder = { Text("تعميد") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            colors = fieldColors,
+        )
+        OutlinedTextField(
+            value = typeKeywords,
+            onValueChange = { typeKeywords = it },
+            label = { Text("كلمة على الورقة") },
+            placeholder = { Text("تعميد صرف") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            colors = fieldColors,
+        )
+        BtnFull("إدراج النوع في القاعدة", onClick = {
+            scope.launch {
+                val stored = repository.addDocumentType(typeName, typeKeywords)
+                if (stored == null) {
+                    typeMessage = "اكتب اسم النوع وكلمة تظهر على الورقة."
+                } else {
+                    val renamed = repository.retitleForType(stored)
+                    typeName = ""
+                    typeKeywords = ""
+                    typeMessage = if (renamed > 0) {
+                        "أُدرج «$stored» وتحدّث اسم $renamed ملف."
+                    } else {
+                        "أُدرج «$stored». أي ورقة في المجلد فيها هذه الكلمة تأخذ هذا النوع."
+                    }
+                }
+            }
+        }, modifier = Modifier.padding(top = 8.dp))
+        typeMessage?.let { NoteSmall(it) }
+        if (documentTypes.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            documentTypes.forEach { type ->
+                Text(
+                    type.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+                Text(
+                    type.keywords.replace("\n", " · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.7f)
+                )
+            }
         }
     }
 }
@@ -246,12 +308,14 @@ fun BackupPanelContent(
         PanelTitle("النسخة الاحتياطية")
 
         SettingRow("تفعيل النسخ الاحتياطي التلقائي", enabled) { on ->
-            scope.launch { prefs.setBackupEnabled(on) }
-            if (on) {
-                BackupScheduler.schedule(context, frequency)
-                BackupScheduler.runOnce(context)
-            } else {
-                BackupScheduler.cancel(context)
+            scope.launch {
+                prefs.setBackupEnabled(on)
+                if (on) {
+                    BackupScheduler.schedule(context, frequency)
+                    BackupScheduler.runOnce(context)
+                } else {
+                    BackupScheduler.cancel(context)
+                }
             }
         }
 

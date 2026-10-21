@@ -1,5 +1,50 @@
 package com.alarsheef.archive.ui.screens.files
 
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.ui.graphics.vector.ImageVector
+import kotlin.math.roundToInt
+import com.alarsheef.archive.ui.theme.GradientStart
+import com.alarsheef.archive.ui.theme.GradientMid
+import com.alarsheef.archive.ui.theme.GradientEnd
+import com.alarsheef.archive.ui.theme.TextMuted
+import com.alarsheef.archive.data.entities.ContentVerified
+import com.alarsheef.archive.util.ArchiveNaming
+import com.alarsheef.archive.ui.components.CountBadge
+import com.alarsheef.archive.ui.components.IconTile
+import androidx.compose.foundation.clickable
+import com.alarsheef.archive.ui.components.GlassTopBar
+import com.alarsheef.archive.ui.components.GlassIconButton
+import com.alarsheef.archive.ui.components.GlassPanel
+import com.alarsheef.archive.ui.components.GlassEmptyState
+import com.alarsheef.archive.ui.components.ConfirmDeleteDialog
+import com.alarsheef.archive.ui.theme.Accent
+import com.alarsheef.archive.ui.theme.OnAccent
+import com.alarsheef.archive.ui.theme.Radius
+import com.alarsheef.archive.ui.theme.GlassSheet
+import com.alarsheef.archive.ui.theme.Glass
+import com.alarsheef.archive.ui.theme.Teal
+import com.alarsheef.archive.ui.theme.BadgePdf
+import com.alarsheef.archive.ui.theme.BadgeDoc
+import com.alarsheef.archive.ui.theme.BadgeSheet
+import com.alarsheef.archive.ui.theme.BadgeOther
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -34,6 +79,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -82,6 +128,7 @@ import com.alarsheef.archive.porter.ArchivePorter
 import com.alarsheef.archive.porter.PorterResult
 import com.alarsheef.archive.ui.components.AddFab
 import com.alarsheef.archive.ui.components.NewFolderDialog
+import com.alarsheef.archive.ui.components.RenameFileDialog
 import com.alarsheef.archive.ui.components.SearchField
 import com.alarsheef.archive.ui.theme.Amber
 import com.alarsheef.archive.ui.theme.GlassBorder
@@ -193,7 +240,8 @@ fun FilesScreen(
             uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
         }
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        context.startActivity(Intent.createChooser(intent, null))
+        // (عدد ضخم من الملفات يتجاوز حد الـBinder — لا يُسقط التطبيق)
+        runCatching { context.startActivity(Intent.createChooser(intent, null)) }
     }
 
     fun shareScope() {
@@ -207,48 +255,29 @@ fun FilesScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             if (hasSelection) {
-                CenterAlignedTopAppBar(
-                    title = { Text("${selected.size} محدد") },
-                    navigationIcon = {
-                        IconButton(
-                            onClick = { selected = emptySet() },
-                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                        ) {
-                            Icon(Icons.Filled.Close, contentDescription = "إلغاء التحديد")
-                        }
+                GlassTopBar(
+                    title = "${selected.size} محدد",
+                    leading = {
+                        GlassIconButton(Icons.Filled.Close, "إلغاء التحديد", { selected = emptySet() })
                     },
                     actions = {
-                        IconButton(
-                            onClick = {
-                                selected = if (selected.size == filtered.size) emptySet() else filtered.map { it.id }.toSet()
-                            },
-                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                        ) {
-                            Icon(Icons.Filled.Check, contentDescription = "تحديد الكل")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
+                        GlassIconButton(
+                            Icons.Filled.Check, "تحديد الكل",
+                            { selected = if (selected.size == filtered.size) emptySet() else filtered.map { it.id }.toSet() }
+                        )
+                    }
                 )
             } else {
-                CenterAlignedTopAppBar(
-                    title = { Text(String.format(Locale.ROOT, "%02d %s %d", day, FileUtils.monthArabicName(month), year)) },
-                    navigationIcon = {
-                        IconButton(
-                            onClick = onBack,
-                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                        }
-                    },
+                GlassTopBar(
+                    title = String.format(Locale.ROOT, "%02d %s %d", day, FileUtils.monthArabicName(month), year),
+                    onBack = onBack,
                     actions = {
-                        IconButton(
-                            onClick = { shareScope() },
-                            modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                        ) {
-                            Icon(Icons.Filled.Share, contentDescription = "مشاركة")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
+                        GlassIconButton(
+                            Icons.Filled.Check, "تحديد الكل",
+                            { selected = filtered.map { it.id }.toSet() }
+                        )
+                        GlassIconButton(Icons.Filled.Share, "مشاركة", { shareScope() })
+                    }
                 )
             }
         },
@@ -262,7 +291,11 @@ fun FilesScreen(
                     scope = scope,
                     onAddFolder = { showNewFolderDialog = true },
                     onExportAll = { pendingExportDay = day; exportLauncher.launch("alarsheef-$year-${FileUtils.twoDigits(month)}-${FileUtils.twoDigits(day)}.zip") },
-                    onImportZip = { importLauncher.launch(arrayOf("application/zip")) },
+                    onImportZip = {
+                        importLauncher.launch(
+                            arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
+                        )
+                    },
                     mergePagesYear = year,
                     mergePagesMonth = month,
                     mergePagesDay = day
@@ -274,9 +307,10 @@ fun FilesScreen(
             SearchField(query = query, onQueryChange = { query = it }, placeholder = "ابحث في هذا اليوم...")
 
             if (filtered.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(if (images.isEmpty()) "لا توجد ملفات في هذا اليوم" else "لا توجد نتائج")
-                }
+                GlassEmptyState(
+                    icon = Icons.Filled.Image,
+                    title = if (images.isEmpty()) "لا توجد ملفات في هذا اليوم" else "لا توجد نتائج"
+                )
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
@@ -299,13 +333,17 @@ fun FilesScreen(
             }
 
             if (hasSelection) {
-                Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
+                GlassPanel(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    radius = Radius.Hero,
+                    background = GlassSheet
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        BottomActionButton(Icons.Filled.Share, "مشاركة", TealBright) { shareDialogOpen = true }
-                        BottomActionButton(Icons.Filled.SwapHoriz, "نقل", TealBright) { moveDialogOpen = true }
+                        BottomActionButton(Icons.Filled.Share, "مشاركة", Accent) { shareDialogOpen = true }
+                        BottomActionButton(Icons.Filled.SwapHoriz, "نقل", Accent) { moveDialogOpen = true }
                         BottomActionButton(Icons.Filled.Delete, "حذف", MaterialTheme.colorScheme.error) { confirmDeleteOpen = true }
                     }
                 }
@@ -318,7 +356,10 @@ fun FilesScreen(
             defaultYear = year, defaultMonth = month, defaultDay = day,
             onDismiss = { moveDialogOpen = false },
             onConfirm = { ty, tm, td ->
-                scope.launch {
+                if (ty == year && tm == month && td == day) {
+                    moveDialogOpen = false
+                    scope.launch { snackbarHostState.showSnackbar("الملفات موجودة في هذا اليوم أصلًا") }
+                } else scope.launch {
                     val toMove = selectedImages
                     val moved = repository.moveImages(toMove, ty, tm, td)
                     val remaining = images.size - moved
@@ -335,22 +376,17 @@ fun FilesScreen(
     }
 
     if (confirmDeleteOpen) {
-        AlertDialog(
-            onDismissRequest = { confirmDeleteOpen = false },
-            title = { Text("تأكيد الحذف") },
-            text = { Text("هل تريد حذف ${selected.size} ملف نهائيًا؟ لا يمكن التراجع عن هذا الإجراء.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        val remaining = images.size - selectedImages.size
-                        repository.deleteImages(selectedImages)
-                        selected = emptySet()
-                        confirmDeleteOpen = false
-                        if (remaining == 0) onBack()
-                    }
-                }) { Text("حذف نهائيًا", color = MaterialTheme.colorScheme.error) }
+        ConfirmDeleteDialog(
+            message = "هل تريد حذف ${selected.size} ملف نهائيًا؟ لا يمكن التراجع عن هذا الإجراء.",
+            onConfirm = {
+                scope.launch {
+                    val remaining = images.size - selectedImages.size
+                    repository.deleteImages(selectedImages)
+                    selected = emptySet()
+                    if (remaining == 0) onBack()
+                }
             },
-            dismissButton = { TextButton(onClick = { confirmDeleteOpen = false }) { Text("إلغاء") } }
+            onDismiss = { confirmDeleteOpen = false }
         )
     }
 
@@ -402,6 +438,27 @@ fun FilesScreen(
     }
 }
 
+private enum class FileKind(val label: String, val color: Color) {
+    PDF("PDF", BadgePdf), IMAGE("صورة", Teal), DOC("DOC", BadgeDoc), SHEET("XLS", BadgeSheet), OTHER("ملف", BadgeOther)
+}
+
+/** نوع الملف للشارة: صفحات PDF المحوَّلة تُعرف باسمها الأصلي (.pdf)، والباقي بالامتداد. */
+private fun kindOf(image: ArchivedImage): FileKind {
+    val original = (image.originalName ?: "").lowercase(Locale.ROOT)
+    val ext = image.fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+    return when {
+        original.contains(".pdf") || ext == "pdf" -> FileKind.PDF
+        ext in setOf("jpg", "jpeg", "png", "webp", "heic", "gif", "bmp") -> FileKind.IMAGE
+        ext in setOf("doc", "docx") -> FileKind.DOC
+        ext in setOf("xls", "xlsx", "csv") -> FileKind.SHEET
+        else -> FileKind.OTHER
+    }
+}
+
+/**
+ * بلاطة ملف (تصميم 5): بطاقة زجاجية، صورة مصغّرة بزوايا مستديرة، شارة نوع، والاسم أسفلها (لا فوق الصورة).
+ * التحديد = حدّ مضيء بلون مميّز + علامة صح.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GridTile(
@@ -410,59 +467,76 @@ private fun GridTile(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    Box(
+    val shape = RoundedCornerShape(Radius.Row)
+    val kind = kindOf(image)
+    Column(
         modifier = Modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(shape)
+            .background(Glass)
+            .border(if (isSelected) 2.dp else 1.dp, if (isSelected) Accent else GlassBorder, shape)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .then(
-                if (isSelected) Modifier.border(2.dp, Color.White, RoundedCornerShape(14.dp))
-                else Modifier
-            )
+            .padding(6.dp)
     ) {
-        AsyncImage(
-            model = File(image.storedPath),
-            contentDescription = image.fileName,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
-        // شريط اسم الملف أسفل البلاطة (خلفية داكنة خفيفة للتباين)
         Box(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.35f))
-                .padding(horizontal = 6.dp, vertical = 3.dp)
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(Radius.Control))
         ) {
-            Text(
-                image.fileName,
-                color = Color.White.copy(alpha = 0.9f),
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1
+            AsyncImage(
+                model = File(image.storedPath),
+                contentDescription = image.fileName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
             )
-        }
-        if (image.receivedCount > 1) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .background(Amber, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 4.dp),
-            ) {
-                Text("×${image.receivedCount}", color = Color.White, fontSize = MaterialTheme.typography.labelLarge.fontSize)
-            }
-        }
-        if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(4.dp)
-                    .size(22.dp)
-                    .background(TealBright, CircleShape),
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(kind.color),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                if (kind == FileKind.IMAGE) {
+                    Icon(Icons.Filled.Image, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                } else {
+                    Text(kind.label, color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+            }
+            if (image.receivedCount > 1) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .background(Amber, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                ) {
+                    Text("×${image.receivedCount}", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .size(22.dp)
+                        .background(Accent, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, tint = OnAccent, modifier = Modifier.size(14.dp))
+                }
             }
         }
+        Text(
+            image.fileName.substringBeforeLast('.'),
+            color = Color.White,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp, start = 2.dp, end = 2.dp)
+        )
     }
 }
 
@@ -474,6 +548,7 @@ private fun sourceLabel(image: ArchivedImage): String = when (image.sourceApp) {
     com.alarsheef.archive.data.entities.SourceApp.MANUAL_CAMERA -> "التقاط صورة"
     com.alarsheef.archive.data.entities.SourceApp.MANUAL_IMPORT -> "استيراد يدوي"
     com.alarsheef.archive.data.entities.SourceApp.DOCUMENT_SCAN -> "مسح مستند"
+    com.alarsheef.archive.data.entities.SourceApp.INBOX -> "مجلد الإدخال"
 }
 
 @Composable
@@ -509,9 +584,12 @@ private fun MoveDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                val ty = y.toIntOrNull() ?: defaultYear
-                val tm = (m.toIntOrNull() ?: defaultMonth).coerceIn(1, 12)
-                val td = (d.toIntOrNull() ?: defaultDay).coerceIn(1, 31)
+                val ty = (y.trim().toIntOrNull() ?: defaultYear).coerceIn(1970, 2100)
+                val tm = (m.trim().toIntOrNull() ?: defaultMonth).coerceIn(1, 12)
+                // لا يُنشأ يوم غير موجود في التقويم (31 فبراير...)
+                val daysInMonth = java.util.Calendar.getInstance().apply { clear(); set(ty, tm - 1, 1) }
+                    .getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+                val td = (d.trim().toIntOrNull() ?: defaultDay).coerceIn(1, daysInMonth)
                 onConfirm(ty, tm, td)
             }) { Text("نقل") }
         },
@@ -529,153 +607,286 @@ private fun ImageViewer(
     onShare: (ArchivedImage) -> Unit
 ) {
     val pagerState = rememberPagerState(initialPage = startIndex) { images.size }
+    val viewerScope = rememberCoroutineScope()
+    var renaming by remember { mutableStateOf<ArchivedImage?>(null) }
+    // التكبير للصفحة الحالية فقط (يُصفَّر عند تغيير الصفحة) — مرفوع هنا ليتحكم به زرا + و−
+    var zoom by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val page = pagerState.currentPage
+    val current = images.getOrNull(page)
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-            val img = images[page]
-            var scale by remember(page) { mutableStateOf(1f) }
-            var offset by remember(page) { mutableStateOf(Offset.Zero) }
+    BackHandler(onBack = onClose)
+    LaunchedEffect(page) {
+        zoom = 1f
+        offset = Offset.Zero
+    }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(page) {
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false)
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val pressedCount = event.changes.count { it.pressed }
-                                if (pressedCount == 0) break
-                                val zoomChange = event.calculateZoom()
-                                val panChange = event.calculatePan()
-                                if (pressedCount >= 2) {
-                                    // إصبعان فأكثر: تقريب/تصغير، وتحريك داخل الصورة عند التكبير فقط
-                                    val newScale = (scale * zoomChange).coerceIn(1f, 5f)
-                                    scale = newScale
-                                    offset = if (newScale <= 1f) Offset.Zero else offset + panChange
-                                    if (zoomChange != 1f || panChange != Offset.Zero) {
-                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(GradientStart, GradientMid, GradientEnd)))
+    ) {
+        Column(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
+            // شريط علوي زجاجي (تصميم 6): رجوع يمين، اسم الملف وسط، تسمية ومشاركة يسار
+            GlassTopBar(
+                title = current?.fileName ?: "",
+                onBack = onClose,
+                actions = {
+                    GlassIconButton(Icons.Filled.Edit, "إعادة تسمية", { renaming = current })
+                    GlassIconButton(Icons.Filled.Share, "مشاركة", { current?.let(onShare) })
+                }
+            )
+
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                // الصفحات المجاورة تظهر جزئيًا على الجانبين (contentPadding) كما في التصميم
+                HorizontalPager(
+                    state = pagerState,
+                    contentPadding = PaddingValues(horizontal = 40.dp, vertical = 8.dp),
+                    pageSpacing = 12.dp,
+                    modifier = Modifier.fillMaxSize()
+                ) { index ->
+                    // القائمة قد تقصر أثناء العرض (حذف/رفض بالخلفية) قبل أن يُحدَّث عدد الصفحات
+                    val img = images.getOrNull(index) ?: return@HorizontalPager
+                    val isCurrent = index == pagerState.currentPage
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(Radius.Hero))
+                            .background(Glass)
+                            .border(1.dp, GlassBorder, RoundedCornerShape(Radius.Hero))
+                            .pointerInput(index, isCurrent) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    if (!isCurrent) return@awaitEachGesture
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val pressedCount = event.changes.count { it.pressed }
+                                        if (pressedCount == 0) break
+                                        val zoomChange = event.calculateZoom()
+                                        val panChange = event.calculatePan()
+                                        if (pressedCount >= 2) {
+                                            // إصبعان فأكثر: تقريب/تصغير، وتحريك داخل الصورة عند التكبير فقط
+                                            val newScale = (zoom * zoomChange).coerceIn(1f, 5f)
+                                            zoom = newScale
+                                            offset = if (newScale <= 1f) Offset.Zero else offset + panChange
+                                            if (zoomChange != 1f || panChange != Offset.Zero) {
+                                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                            }
+                                        } else if (zoom > 1f && panChange != Offset.Zero) {
+                                            // إصبع واحد والصورة مكبّرة: تحريك داخلها دون تغيير الصفحة
+                                            offset += panChange
+                                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                        }
                                     }
-                                } else if (scale > 1f && panChange != Offset.Zero) {
-                                    // مصبع واحد والصورة مكبّرة: تحريك داخلها دون تغيير الصفحة
-                                    offset += panChange
-                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
                                 }
-                            }
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                AsyncImage(
-                    model = File(img.storedPath),
-                    contentDescription = img.fileName,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer(
-                            scaleX = scale, scaleY = scale,
-                            translationX = offset.x, translationY = offset.y
-                        )
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(14.dp),
-        ) {
-            IconButton(onClick = { onShare(images[pagerState.currentPage]) }) {
-                Icon(Icons.Filled.Share, contentDescription = "مشاركة", tint = Color.White)
-            }
-        }
-        IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart).padding(14.dp)) {
-            Icon(Icons.Filled.Close, contentDescription = "إغلاق", tint = Color.White)
-        }
-
-        Column(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            val current = images.getOrNull(pagerState.currentPage)
-            if (current != null) {
-                Text(current.fileName, color = Color.White, style = MaterialTheme.typography.titleMedium)
-                val meta = "${sourceLabel(current)} · ${FileUtils.formatTime(current.importedAt)}" +
-                    if (current.receivedCount > 1) " · استُلمت ${current.receivedCount} مرات" else ""
-                Text(meta, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium)
-
-                // وسوم التصنيف التلقائي + مقتطف النص المستخرج (اختياريان حسب ما حلّله المحرّك)
-                val aiLabels by repository.observeLabelsForImage(current.id)
-                    .collectAsStateWithLifecycle(initialValue = emptyList())
-                val ocr by repository.observeOcrForImage(current.id)
-                    .collectAsStateWithLifecycle(initialValue = null)
-
-                if (aiLabels.isNotEmpty()) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(top = 8.dp)
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
-                        aiLabels.take(4).forEach { label ->
-                            Box(
-                                modifier = Modifier
-                                    .background(Color.White.copy(alpha = 0.18f), RoundedCornerShape(50))
-                                    .padding(horizontal = 10.dp, vertical = 3.dp)
-                            ) {
-                                Text(label.label, color = Color.White, style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
+                        AsyncImage(
+                            model = File(img.storedPath),
+                            contentDescription = img.fileName,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp)
+                                .graphicsLayer(
+                                    scaleX = if (isCurrent) zoom else 1f,
+                                    scaleY = if (isCurrent) zoom else 1f,
+                                    translationX = if (isCurrent) offset.x else 0f,
+                                    translationY = if (isCurrent) offset.y else 0f
+                                )
+                        )
                     }
                 }
-
-                val ocrText = ocr?.text?.trim().orEmpty()
-                if (ocrText.isNotEmpty()) {
-                    Text(
-                        ocrText.replace('\n', ' ').take(160),
-                        color = Color.White.copy(alpha = 0.65f),
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        modifier = Modifier.padding(top = 8.dp, start = 24.dp, end = 24.dp)
+                // سهما التنقّل: في RTL الصفحة السابقة يمينًا والتالية يسارًا
+                if (page > 0) {
+                    GlassIconButton(
+                        Icons.AutoMirrored.Filled.KeyboardArrowLeft, "السابق",
+                        { viewerScope.launch { pagerState.animateScrollToPage(page - 1) } },
+                        modifier = Modifier.align(Alignment.CenterStart).padding(start = 4.dp)
                     )
                 }
+                if (page < images.size - 1) {
+                    GlassIconButton(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight, "التالي",
+                        { viewerScope.launch { pagerState.animateScrollToPage(page + 1) } },
+                        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp)
+                    )
+                }
+            }
 
-                // نتائج Gemini السحابية: وصف عربي + بيانات الفاتورة إن وُجدت
-                val cloud by repository.observeCloudMeta(current.id)
-                    .collectAsStateWithLifecycle(initialValue = null)
-                val cloudMeta = cloud
-                if (cloudMeta != null) {
-                    if (cloudMeta.description.isNotBlank()) {
-                        Text(
-                            cloudMeta.description,
-                            color = Color.White.copy(alpha = 0.78f),
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 2,
-                            modifier = Modifier.padding(top = 6.dp, start = 24.dp, end = 24.dp)
-                        )
-                    }
-                    val invoiceBits = buildList {
-                        cloudMeta.vendor?.takeIf(String::isNotBlank)?.let { add(it) }
-                        cloudMeta.amount?.takeIf(String::isNotBlank)?.let { amount ->
-                            add(cloudMeta.currency?.takeIf(String::isNotBlank)?.let { "$amount $it" } ?: amount)
-                        }
-                        cloudMeta.invoiceDate?.takeIf(String::isNotBlank)?.let { add(it) }
-                    }
-                    if (invoiceBits.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 6.dp)
-                                .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(50))
-                                .padding(horizontal = 10.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                "فاتورة: " + invoiceBits.joinToString(" · "),
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelMedium,
-                                maxLines = 1
+            // مؤشر الصفحات + عدّاد + عناصر التكبير
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (images.size in 2..9) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        repeat(images.size) { i ->
+                            Box(
+                                modifier = Modifier
+                                    .size(if (i == page) 18.dp else 6.dp, 6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(if (i == page) Accent else GlassBorder)
                             )
                         }
                     }
                 }
+                if (images.size > 1) {
+                    Text(
+                        "${page + 1} / ${images.size}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = TextMuted,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                GlassPanel(modifier = Modifier.padding(top = 8.dp), radius = Radius.Hero) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            zoom = (zoom - 0.5f).coerceIn(1f, 5f)
+                            if (zoom <= 1f) offset = Offset.Zero
+                        }) { Icon(Icons.Filled.Remove, contentDescription = "تصغير", tint = Color.White) }
+                        Text(
+                            "${(zoom * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.width(56.dp),
+                            textAlign = TextAlign.Center
+                        )
+                        IconButton(onClick = { zoom = (zoom + 0.5f).coerceIn(1f, 5f) }) {
+                            Icon(Icons.Filled.Add, contentDescription = "تكبير", tint = Color.White)
+                        }
+                    }
+                }
             }
+
+            if (current != null) ViewerInfoPanel(repository, current)
         }
+
+        renaming?.let { img ->
+            RenameFileDialog(
+                initial = img.fileName.substringBeforeLast('.'),
+                onSave = { text -> viewerScope.launch { repository.renameImage(img, text, lock = true) } },
+                onDismiss = { renaming = null }
+            )
+        }
+    }
+}
+
+/** لوحة التفاصيل السفلية (تصميم 6): النوع والوصف، شارة الفئة، ثم الجهة/المبلغ/التاريخ. */
+@Composable
+private fun ViewerInfoPanel(repository: ArchiveRepository, current: ArchivedImage) {
+    val aiLabels by repository.observeLabelsForImage(current.id)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val ocr by repository.observeOcrForImage(current.id)
+        .collectAsStateWithLifecycle(initialValue = null)
+    val cloud by repository.observeCloudMeta(current.id)
+        .collectAsStateWithLifecycle(initialValue = null)
+    val cloudMeta = cloud
+    val typeLabel = ArchiveNaming.labelOf(current.fileName)
+    val isDocument = current.contentVerified == ContentVerified.ACCEPTED || typeLabel != null
+
+    GlassPanel(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        radius = Radius.Hero,
+        background = GlassStrong
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconTile(size = 48.dp, circle = true) {
+                    Icon(Icons.Filled.Description, contentDescription = null, tint = Accent)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (isDocument) "مستند" else "صورة",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    val description = cloudMeta?.description?.takeIf { it.isNotBlank() }
+                        ?: ocr?.text?.trim()?.replace('\n', ' ')?.take(120)?.takeIf { it.isNotEmpty() }
+                    if (description != null) {
+                        Text(
+                            description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (typeLabel != null) CountBadge(typeLabel.replace('_', ' '))
+            }
+
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp).height(1.dp).background(GlassBorder))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                DetailItem(Icons.Filled.Business, "الجهة", cloudMeta?.vendor)
+                DetailItem(
+                    Icons.Filled.AccountBalanceWallet, "المبلغ",
+                    cloudMeta?.amount?.takeIf { it.isNotBlank() }?.let { amount ->
+                        cloudMeta?.currency?.takeIf { it.isNotBlank() }?.let { "$amount $it" } ?: amount
+                    }
+                )
+                DetailItem(Icons.Filled.CalendarMonth, "التاريخ", cloudMeta?.invoiceDate)
+            }
+
+            if (aiLabels.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(top = 10.dp)
+                ) {
+                    aiLabels.take(4).forEach { label ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(Radius.Small))
+                                .background(Glass)
+                                .border(1.dp, GlassBorder, RoundedCornerShape(Radius.Small))
+                                .padding(horizontal = 10.dp, vertical = 3.dp)
+                        ) {
+                            Text(label.label, color = Color.White, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+
+            val originalName = current.originalName
+            val meta = buildList {
+                add(sourceLabel(current))
+                add(FileUtils.formatTime(current.importedAt))
+                if (current.receivedCount > 1) add("استُلمت ${current.receivedCount} مرات")
+                if (!originalName.isNullOrBlank() && originalName != current.fileName) add("الاسم الأصلي: $originalName")
+            }.joinToString(" · ")
+            Text(
+                meta,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 10.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun RowScope.DetailItem(icon: ImageVector, label: String, value: String?) {
+    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, contentDescription = null, tint = Accent, modifier = Modifier.size(18.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+        Text(
+            value?.takeIf { it.isNotBlank() } ?: "—",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
     }
 }

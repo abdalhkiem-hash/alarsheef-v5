@@ -79,6 +79,37 @@ object FileUtils {
 
     fun twoDigits(value: Int): String = String.format(Locale.ROOT, "%02d", value)
 
+    /** صيغة عدد عربية صحيحة: 1 مفرد، 2 مثنّى، 3–10 جمع، 11+ مفرد منصوب. */
+    fun countLabel(n: Int, one: String, two: String, few: String, many: String = one): String = when {
+        n == 1 -> one
+        n == 2 -> two
+        n in 3..10 -> "$n $few"
+        else -> "$n $many"
+    }
+
+    /** "الآن"، "منذ ساعتين"، "منذ 3 أيام"... (بالعربية مع المثنّى والجمع). */
+    fun relativeTime(millis: Long, now: Long = System.currentTimeMillis()): String {
+        val diff = (now - millis).coerceAtLeast(0L)
+        val minute = 60_000L
+        val hour = 60 * minute
+        val day = 24 * hour
+        fun unit(n: Long, one: String, two: String, few: String): String = when {
+            n == 1L -> one
+            n == 2L -> two
+            n in 3L..10L -> "$n $few"
+            else -> "$n $one"
+        }
+        return when {
+            diff < minute -> "الآن"
+            diff < hour -> "منذ " + unit(diff / minute, "دقيقة", "دقيقتين", "دقائق")
+            diff < day -> "منذ " + unit(diff / hour, "ساعة", "ساعتين", "ساعات")
+            diff < 7 * day -> "منذ " + unit(diff / day, "يوم", "يومين", "أيام")
+            diff < 30 * day -> "منذ " + unit(diff / (7 * day), "أسبوع", "أسبوعين", "أسابيع")
+            diff < 365 * day -> "منذ " + unit(diff / (30 * day), "شهر", "شهرين", "أشهر")
+            else -> "منذ " + unit(diff / (365 * day), "سنة", "سنتين", "سنوات")
+        }
+    }
+
     /** يحوّل عدد البايتات إلى نص عربي مقروء مثل "4.2 جيجابايت" أو "830 ميجابايت". */
     fun formatBytes(bytes: Long): String {
         if (bytes <= 0L) return "0 بايت"

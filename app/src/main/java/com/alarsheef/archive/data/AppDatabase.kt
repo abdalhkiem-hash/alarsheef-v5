@@ -12,12 +12,16 @@ import com.alarsheef.archive.data.dao.AiDao
 import com.alarsheef.archive.data.dao.ArchivedImageDao
 import com.alarsheef.archive.data.dao.CustomLabelDao
 import com.alarsheef.archive.data.dao.DayGroupDao
+import com.alarsheef.archive.data.dao.DocumentTypeDao
+import com.alarsheef.archive.data.dao.ProcessedSourceDao
 import com.alarsheef.archive.data.dao.SubFolderDao
 import com.alarsheef.archive.data.entities.AiCloudMeta
 import com.alarsheef.archive.data.entities.ArchivedImage
 import com.alarsheef.archive.data.entities.ContentVerified
 import com.alarsheef.archive.data.entities.CustomLabel
 import com.alarsheef.archive.data.entities.DayGroup
+import com.alarsheef.archive.data.entities.DocumentType
+import com.alarsheef.archive.data.entities.ProcessedSource
 import com.alarsheef.archive.data.entities.FaceGroup
 import com.alarsheef.archive.data.entities.FaceGroupMember
 import com.alarsheef.archive.data.entities.ImageLabel
@@ -52,9 +56,11 @@ class Converters {
         FaceGroupMember::class,
         SubFolder::class,
         DayGroup::class,
-        AiCloudMeta::class
+        AiCloudMeta::class,
+        DocumentType::class,
+        ProcessedSource::class,
     ],
-    version = 10,
+    version = 12,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -64,6 +70,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun aiDao(): AiDao
     abstract fun subFolderDao(): SubFolderDao
     abstract fun dayGroupDao(): DayGroupDao
+    abstract fun documentTypeDao(): DocumentTypeDao
+    abstract fun processedSourceDao(): ProcessedSourceDao
 
     companion object {
         /** ترقية بدون فقدان بيانات: تنظيف التكرارات ثم إضافة الفهارس */
@@ -219,6 +227,26 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /** ترقية 8→9: إضافة عمود contentVerified للتحقق النصي من محتوى المستند — إعادة إنشاء الجدول بنفس ترتيب أعمدة الكيان */
+        /**
+         * 9→10: لا تغيير فعلي بالبنية. الإصدار 10 أُعلن فقط لأن الكيان فقد `defaultValue="0"`
+         * على contentVerified (الجدول الفعلي ما زال `INTEGER NOT NULL DEFAULT 0` وهو متوافق).
+         * كان الإصدار 10 معلنًا بلا ترحيل، فمع fallbackToDestructiveMigration كانت أي قاعدة v9
+         * تُمسح بصمت عند التحديث — هذا الترحيل الفارغ يسدّ تلك الثغرة.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) { /* لا شيء */ }
+        }
+
+        /** 10→11: الاسم الأصلي للملف + قفل الاسم اليدوي. عمودان فقط، لا إعادة بناء جدول. */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE archived_images ADD COLUMN originalName TEXT")
+                db.execSQL("ALTER TABLE archived_images ADD COLUMN nameLocked INTEGER NOT NULL DEFAULT 0")
+                // احتياط لقاعدة مرّت بنسخة 8→9 القديمة التي أنشأت هذا الفهرس الزائد (انظر MIGRATION_8_9)
+                db.execSQL("DROP INDEX IF EXISTS index_archived_images_contentVerified")
+            }
+        }
+
         val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("BEGIN TRANSACTION")
@@ -268,10 +296,8 @@ abstract class AppDatabase : RoomDatabase() {
                         "CREATE INDEX IF NOT EXISTS index_archived_images_originalPath " +
                             "ON archived_images (originalPath)"
                     )
-                    db.execSQL(
-                        "CREATE INDEX IF NOT EXISTS index_archived_images_contentVerified " +
-                            "ON archived_images (contentVerified)"
-                    )
+                    // لا فهرس على contentVerified: الكيان لا يعلنه، وأي فهرس زائد يجعل Room
+                    // يرفض المخطط بعد الترحيل ("Migration didn't properly handle") فينهار الفتح.
                     db.execSQL("COMMIT")
                 } catch (e: Exception) {
                     db.execSQL("ROLLBACK")
@@ -279,6 +305,34 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
         }
+
+        /** 11→12: أنواع المستندات التي يضيفها المستخدم، وملفات الإدخال التي اكتمل سيرها. */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS document_types (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, " +
+                        "keywords TEXT NOT NULL, " +
+                        "createdAt INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_document_types_name " +
+                        "ON document_types (name)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS processed_sources (" +
+                        "path TEXT NOT NULL PRIMARY KEY)"
+                )
+            }
+        }
+
+        /** السلسلة الكاملة 1←12 — مصدر واحد للتطبيق ولاختبارات الترحيل. */
+        val ALL_MIGRATIONS: Array<Migration> = arrayOf(
+            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
+            MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+            MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12
+        )
 
         @Volatile private var INSTANCE: AppDatabase? = null
 
@@ -288,11 +342,10 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "arsheef.db"
-                ).addMigrations(
-                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                    MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
-                )
-                    .fallbackToDestructiveMigration()
+                ).addMigrations(*ALL_MIGRATIONS)
+                    // لا fallbackToDestructiveMigration: أي ترحيل ناقص يجب أن يفشل بصوت عالٍ
+                    // (استثناء عند الفتح) لا أن يمسح فهرس الأرشيف بصمت. السلسلة 1←12 كاملة.
+                    // تنبيه: تثبيت نسخة بإصدار قاعدة أقدم فوق أحدث يفشل أيضًا (لا خفض إصدار).
                     .build()
                     .also { INSTANCE = it }
             }

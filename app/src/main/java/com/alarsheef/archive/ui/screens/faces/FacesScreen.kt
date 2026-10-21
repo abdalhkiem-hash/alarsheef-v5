@@ -2,9 +2,11 @@
 
 package com.alarsheef.archive.ui.screens.faces
 
+import com.alarsheef.archive.ui.components.GlassTopBar
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -149,18 +151,7 @@ private fun GroupsList(
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("مجموعات الوجوه") },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
-            )
+            GlassTopBar(title = "مجموعات الوجوه", onBack = onBack)
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -234,18 +225,7 @@ private fun MembersList(
 ) {
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text(members.size.coerceAtLeast(1).let { "المجموعة ($it صورة)" }) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.background(GlassStrong, RoundedCornerShape(14.dp))
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground, navigationIconContentColor = MaterialTheme.colorScheme.onBackground, actionIconContentColor = MaterialTheme.colorScheme.onBackground)
-            )
+            GlassTopBar(title = members.size.coerceAtLeast(1).let { "المجموعة ($it صورة)" }, onBack = onBack)
         }
     ) { padding ->
         if (members.isEmpty()) {
@@ -259,12 +239,13 @@ private fun MembersList(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(members, key = { it.memberId }) { member ->
-                    Card(
-                        onClick = { onOpenImage(member.year, member.month, member.day, member.imageId) },
-                        modifier = Modifier.fillMaxWidth()
-                            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp)),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(com.alarsheef.archive.ui.theme.Glass)
+                            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
+                            .clickable { onOpenImage(member.year, member.month, member.day, member.imageId) }
                     ) {
                         Row(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             CoverThumb(path = member.cropPath, size = 46)

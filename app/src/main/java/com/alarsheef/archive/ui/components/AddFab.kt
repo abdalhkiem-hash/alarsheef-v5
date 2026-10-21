@@ -31,13 +31,54 @@ import androidx.core.content.ContextCompat
 import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.data.repository.ImportResult
-import com.alarsheef.archive.ui.components.DocumentScannerSaveDialog
-import com.alarsheef.archive.ui.components.MergePagesDialog
-import com.alarsheef.archive.ui.theme.TealDark
 import com.alarsheef.archive.util.FeatureFlags
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+
+/** أقصى ضلع لصفحة ممسوحة — يكفي للقراءة والـOCR ويحمي من نفاد الذاكرة. */
+private const val MAX_SCAN_DIMENSION = 3000
+
+/** يفك صورة الالتقاط مصغّرة إلى [MAX_SCAN_DIMENSION] مع تطبيق دوران EXIF؛ null لو تعذّر. */
+private fun decodeScanPage(file: File): android.graphics.Bitmap? = try {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        null
+    } else {
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_SCAN_DIMENSION) sample *= 2
+        val bitmap = android.graphics.BitmapFactory.decodeFile(
+            file.absolutePath,
+            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        )
+        val degrees = when (
+            androidx.exifinterface.media.ExifInterface(file.absolutePath).getAttributeInt(
+                androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL
+            )
+        ) {
+            androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+        if (bitmap == null || degrees == 0f) {
+            bitmap
+        } else {
+            val matrix = android.graphics.Matrix().apply { postRotate(degrees) }
+            val rotated = android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (rotated !== bitmap) bitmap.recycle()
+            rotated
+        }
+    }
+} catch (e: Exception) {
+    null
+} catch (e: OutOfMemoryError) {
+    null
+}
 
 @Composable
 fun AddFab(
@@ -67,12 +108,11 @@ fun AddFab(
         }
         val notePart = note ?: ""
         val message = if (notePart.isNotEmpty()) "$baseMessage $notePart" else baseMessage
-        scope.launch {
-            snackbarHostState.showSnackbar(message)
-            if (result is ImportResult.Added) {
-                com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
-            }
+        // التحليل يبدأ فورًا — showSnackbar يعلّق حتى اختفاء الرسالة فكان يؤخّره ثوانيَ
+        if (result is ImportResult.Added) {
+            com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
         }
+        scope.launch { snackbarHostState.showSnackbar(message) }
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
@@ -80,14 +120,46 @@ fun AddFab(
         pendingCaptureFile = null
         if (success && file != null) {
             scope.launch { showResult(repository.importFile(file, SourceApp.MANUAL_CAMERA), null) }
+        } else {
+            // إلغاء الالتقاط: لا يبقى ملف فارغ في الكاش
+            file?.delete()
         }
     }
 
+    val documentScannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val file = pendingCaptureFile
+        pendingCaptureFile = null
+        if (success && file != null) {
+            scope.launch {
+                // فك مصغّر على خيط IO: صورة كاميرا كاملة (حتى 108MP) كانت تُفك على الخيط
+                // الرئيسي بكامل دقتها (مئات الميجابايت) ثم يبقى ملفها في الكاش.
+                val bitmap = withContext(Dispatchers.IO) {
+                    val decoded = decodeScanPage(file)
+                    file.delete()
+                    decoded
+                }
+                if (bitmap != null) {
+                    scannedPageBitmaps = listOf(bitmap)
+                    showScannerSaveDialog = true
+                } else {
+                    snackbarHostState.showSnackbar("تعذّرت قراءة الصورة الملتقطة")
+                }
+            }
+        } else {
+            file?.delete()
+        }
+    }
+
+    // أي زر طلب صلاحية الكاميرا؟ (كان منح الصلاحية من «مسح مستند» يفتح الالتقاط العادي)
+    var scanAfterPermission by remember { mutableStateOf(false) }
+
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val forScan = scanAfterPermission
+        scanAfterPermission = false
         if (granted) {
             val (file, uri) = repository.createCameraCaptureTarget()
             pendingCaptureFile = file
-            cameraLauncher.launch(uri)
+            if (forScan) documentScannerLauncher.launch(uri) else cameraLauncher.launch(uri)
         } else {
             scope.launch { snackbarHostState.showSnackbar("صلاحية الكاميرا مطلوبة للالتقاط") }
         }
@@ -99,23 +171,11 @@ fun AddFab(
         }
     }
 
-    val documentScannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success && pendingCaptureFile != null) {
-            val file = pendingCaptureFile!!
-            pendingCaptureFile = null
-            val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
-            if (bitmap != null) {
-                scannedPageBitmaps = listOf(bitmap)
-                showScannerSaveDialog = true
-            }
-        }
-    }
-
     Box {
         ExtendedFloatingActionButton(
             onClick = { menuExpanded = true },
-            containerColor = Color.White,
-            contentColor = TealDark,
+            containerColor = com.alarsheef.archive.ui.theme.Accent,
+            contentColor = com.alarsheef.archive.ui.theme.OnAccent,
             text = { Text("إضافة") },
             icon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) }
         )
@@ -154,6 +214,7 @@ fun AddFab(
                         pendingCaptureFile = file
                         documentScannerLauncher.launch(uri)
                     } else {
+                        scanAfterPermission = true
                         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     }
                 }
@@ -216,28 +277,44 @@ fun AddFab(
     if (showScannerSaveDialog) {
         DocumentScannerSaveDialog(
             pageBitmaps = scannedPageBitmaps,
-            onSave = { name, category, ocrText, secure ->
+            onSave = { name, _, _, _ ->
+                // تُلتقط الصفحات **قبل** الإطلاق: الحوار يستدعي onDismiss فورًا بعد onSave فيُفرَّغ
+                // scannedPageBitmaps قبل أن يبدأ هذا الـcoroutine — كان يُحفظ «0 صفحة».
+                val pages = scannedPageBitmaps
                 scope.launch {
-                    scannedPageBitmaps.forEach { bitmap ->
+                    var saved = 0
+                    pages.forEachIndexed { index, bitmap ->
                         val tempFile = File(context.cacheDir, "scan_${System.nanoTime()}.jpg")
-                        tempFile.outputStream().use { stream ->
-                            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, stream)
+                        withContext(Dispatchers.IO) {
+                            tempFile.outputStream().use { stream ->
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, stream)
+                            }
                         }
-                        repository.importFile(tempFile, SourceApp.DOCUMENT_SCAN)
+                        // الاسم الذي كتبه المستخدم كان يُتجاهل؛ الآن يُستخدم (مع رقم الصفحة لو أكثر من صفحة)
+                        val chosen = name.trim().takeIf { it.isNotEmpty() }
+                            ?.let { if (pages.size > 1) "${it}_ص${index + 1}" else it }
+                        val result = repository.importFile(tempFile, SourceApp.DOCUMENT_SCAN, preferredBaseName = chosen)
+                        if (result is ImportResult.Added) saved++
                         tempFile.delete()
                     }
-                    snackbarHostState.showSnackbar("تم حفظ ${scannedPageBitmaps.size} صفحة في أرشيف اليوم")
-                    com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
-                    scannedPageBitmaps = emptyList()
+                    if (saved > 0) com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
+                    snackbarHostState.showSnackbar(
+                        if (saved > 0) "تم حفظ $saved صفحة في أرشيف اليوم"
+                        else "لم تُحفظ أي صفحة (موجودة من قبل أو تعذّر الحفظ)"
+                    )
                 }
             },
-            onExportPdf = { bitmaps, name ->
+            onExportPdf = { bitmaps, _ ->
                 scope.launch {
+                    val tempFiles = mutableListOf<File>()
                     val pdfFile = repository.mergeImagesToPdf(
                         bitmaps.mapIndexed { index, bitmap ->
                             val tempFile = File(context.cacheDir, "scan_${index}_${System.nanoTime()}.jpg")
-                            tempFile.outputStream().use { stream ->
-                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, stream)
+                            tempFiles += tempFile
+                            withContext(Dispatchers.IO) {
+                                tempFile.outputStream().use { stream ->
+                                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, stream)
+                                }
                             }
                             com.alarsheef.archive.data.entities.ArchivedImage(
                                 id = 0,
@@ -253,6 +330,7 @@ fun AddFab(
                             )
                         }
                     )
+                    tempFiles.forEach { it.delete() }
                     if (pdfFile != null) {
                         val uri = repository.getShareUriForFile(pdfFile)
                         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -260,7 +338,11 @@ fun AddFab(
                             putExtra(android.content.Intent.EXTRA_STREAM, uri)
                             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
-                        context.startActivity(android.content.Intent.createChooser(intent, "مشاركة PDF"))
+                        runCatching {
+                            context.startActivity(android.content.Intent.createChooser(intent, "مشاركة PDF"))
+                        }
+                    } else {
+                        snackbarHostState.showSnackbar("تعذّر إنشاء ملف PDF")
                     }
                 }
             },
