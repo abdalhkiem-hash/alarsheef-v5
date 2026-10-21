@@ -311,6 +311,31 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         }
     }
 
+    /**
+     * بوابة الصورة: الشكل والوجه ثم النص. تعيد حالة الاستيراد مع النص المقروء،
+     * أو null إن لم تكن مستندًا (صورة شخصية/عائلية أو لا نص فيها).
+     */
+    private suspend fun gateImage(file: File, name: String): Pair<ContentVerified, String?>? {
+        val hasFace = runCatching { FaceDetectionUtil.hasFace(file) }.getOrDefault(false)
+        val assessment = ImportGate.evaluate(file, hasFace, excludePersonalPhotos = true, documentsOnly = true, displayName = name)
+        if (assessment.decision == ImportGate.Decision.REJECT) return null
+        val outcome = if (keepGateText) {
+            runCatching { ContentGate.evaluate(applicationContext, listOf(file), allowCloud = false) }
+                .getOrDefault(ContentGate.Outcome.Unavailable)
+        } else {
+            ContentGate.Outcome.Unavailable
+        }
+        val (evidence, text) = when (outcome) {
+            is ContentGate.Outcome.Accepted -> ImportGate.TextEvidence.ACCEPTED to outcome.text
+            is ContentGate.Outcome.Ambiguous -> ImportGate.TextEvidence.PARTIAL to outcome.text
+            is ContentGate.Outcome.Rejected -> ImportGate.TextEvidence.REJECTED to null
+            ContentGate.Outcome.NoText -> ImportGate.TextEvidence.NO_TEXT to null
+            ContentGate.Outcome.Unavailable -> ImportGate.TextEvidence.UNREADABLE to null
+        }
+        val status = ImportGate.finalStatus(assessment.decision, evidence, assessment.shape) ?: return null
+        return status to text
+    }
+
     private suspend fun readText(files: List<File>): String? {
         if (!keepGateText || files.isEmpty()) return null
         return runCatching { ContentGate.readText(applicationContext, files) }.getOrNull()
@@ -326,6 +351,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         ocrText: String?,
         existingPaths: MutableSet<String>,
         sourceApp: SourceApp,
+        verified: ContentVerified = ContentVerified.ACCEPTED,
     ): ImportResult {
         val result = repository.importFile(
             sourceFile = file,
@@ -334,7 +360,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
             countDuplicate = false,
             originalPath = identity,
             originalDate = originalDate,
-            contentVerified = ContentVerified.ACCEPTED,
+            contentVerified = verified,
             namePrefix = "مستند",
             originalName = originalName,
             ocrText = ocrText,
@@ -473,7 +499,14 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         try {
             copyUri(hit.uri, temp) ?: return 0
             if (temp.length() == 0L) return 0
-            val text = readText(listOf(temp))
+            // واتساب أعمال يصله الشخصي والعائلي أيضًا: الصورة تمر على البوابة، وغير المستند لا يدخل.
+            val gated = gateImage(temp, hit.name)
+            if (gated == null) {
+                repository.markSourceProcessed(hit.identity)
+                done.add(hit.identity)
+                Log.i(TAG, "غير مستند — لم تُؤرشف: ${hit.name}")
+                return 0
+            }
             return when (
                 importOne(
                     repository = repository,
@@ -481,9 +514,10 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     identity = hit.identity,
                     originalDate = hit.arrivedAt,
                     originalName = hit.name,
-                    ocrText = text,
+                    ocrText = gated.second,
                     existingPaths = existingPaths,
                     sourceApp = SourceApp.WHATSAPP_BUSINESS,
+                    verified = gated.first,
                 )
             ) {
                 is ImportResult.Added -> {
