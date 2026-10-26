@@ -158,6 +158,10 @@ internal fun NoteSmall(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+/** اسم مقروء لمجلد SAF من رابطه، مثل: Android/media/.../WhatsApp Business Documents. */
+internal fun folderLabel(treeUri: String): String =
+    android.net.Uri.decode(treeUri.substringAfter("/tree/", treeUri)).substringAfter(':')
+
 // ---------- اللوحات ----------
 
 @Composable
@@ -213,7 +217,7 @@ fun SettingsPanelContent(
         )
         NoteSmall(
             if (businessDocsUri != null) {
-                "يُفحص هذا المجلد، ويُؤرشف ملف PDF الذي وصل اليوم فقط."
+                "المجلد الحالي: ${folderLabel(businessDocsUri!!)}\nيُفحص هذا المجلد، ويُؤرشف ملف PDF الذي وصل اليوم فقط."
             } else {
                 "مطلوب لملفات PDF لأن أندرويد يمنع قراءتها دون اختيار المجلد: Android › media › com.whatsapp.w4b › WhatsApp Business › Media › WhatsApp Business Documents."
             }
@@ -231,7 +235,7 @@ fun SettingsPanelContent(
             Modifier.padding(top = 8.dp)
         )
         if (importFolderUri != null) {
-            NoteSmall("يُفحص هذا المجلد يوميًا، ويُؤرشف ملف اليوم فقط. الملف الناقص يُترك حتى يكتمل.")
+            NoteSmall("المجلد الحالي: ${folderLabel(importFolderUri!!)}\nيُفحص هذا المجلد يوميًا، ويُؤرشف ملف اليوم فقط. الملف الناقص يُترك حتى يكتمل.")
         } else {
             NoteSmall("بلا مجلد يبقى الفحص على واتساب أعمال فقط.")
         }
