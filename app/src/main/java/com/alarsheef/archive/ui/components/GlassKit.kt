@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -261,4 +262,50 @@ fun GlassEmptyState(
             }
         }
     }
+}
+
+/**
+ * القائمة المنسدلة الموحّدة: سطح كحلي معتم بزوايا Row وعرض أدنى ثابت، لتبدو كل القوائم
+ * (إضافة، سنة، شهر، يوم، وجوه) بشكل واحد. الزاوية تُمرَّر عبر الثيم لأن DropdownMenu
+ * يأخذ شكله من extraSmall.
+ */
+@Composable
+fun ArsheefDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    MaterialTheme(
+        // surface زجاجي شفاف في الثيم، وDropdownMenu يرسم به خلفيته: يُستبدل هنا بلون معتم.
+        colorScheme = MaterialTheme.colorScheme.copy(surface = Color(0xFF082A36)),
+        typography = MaterialTheme.typography,
+        shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(Radius.Row))
+    ) {
+        androidx.compose.material3.DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = onDismissRequest,
+            modifier = modifier.widthIn(min = 220.dp),
+            content = content
+        )
+    }
+}
+
+/** عنصر قائمة موحّد: نص أبيض، أيقونة بلون التمييز، وللحذف لون الخطر. */
+@Composable
+fun ArsheefMenuItem(
+    text: String,
+    onClick: () -> Unit,
+    icon: ImageVector? = null,
+    destructive: Boolean = false
+) {
+    val textColor = if (destructive) MaterialTheme.colorScheme.error else Color.White
+    androidx.compose.material3.DropdownMenuItem(
+        text = { Text(text, style = MaterialTheme.typography.bodyMedium, color = textColor) },
+        leadingIcon = icon?.let {
+            { Icon(it, contentDescription = null, tint = if (destructive) textColor else Accent, modifier = Modifier.size(22.dp)) }
+        },
+        onClick = onClick,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+    )
 }

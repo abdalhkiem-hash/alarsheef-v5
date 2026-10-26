@@ -463,9 +463,10 @@ fun MergePagesDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var selectedYear by remember { mutableStateOf(initialYear ?: java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)) }
-    var selectedMonth by remember { mutableStateOf(initialMonth ?: java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) + 1) }
-    var selectedDay by remember { mutableStateOf(initialDay ?: java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH)) }
+    val workToday = remember { com.alarsheef.archive.util.FileUtils.today() }
+    var selectedYear by remember { mutableStateOf(initialYear ?: workToday.first) }
+    var selectedMonth by remember { mutableStateOf(initialMonth ?: workToday.second) }
+    var selectedDay by remember { mutableStateOf(initialDay ?: workToday.third) }
     var loading by remember { mutableStateOf(false) }
     var resultMessage by remember { mutableStateOf<String?>(null) }
     var showResult by remember { mutableStateOf(false) }

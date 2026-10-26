@@ -148,7 +148,7 @@ class FileUtilsTest {
     }
 
     @Test
-    fun startOfToday_isMidnightNotAfterNow() {
+    fun startOfToday_isSixAmNotAfterNow() {
         val start = FileUtils.startOfToday()
         val now = System.currentTimeMillis()
         assertTrue(start <= now)
@@ -157,5 +157,32 @@ class FileUtilsTest {
         // (الساعة لا تُفحص: في مناطق يبدأ فيها التوقيت الصيفي عند منتصف الليل لا توجد 00:00)
         assertEquals(0, cal.get(java.util.Calendar.MINUTE))
         assertEquals(0, cal.get(java.util.Calendar.MILLISECOND))
+    }
+
+    private fun at(y: Int, m: Int, d: Int, h: Int, min: Int = 0): Long =
+        java.util.Calendar.getInstance().apply { clear(); set(y, m - 1, d, h, min, 0) }.timeInMillis
+
+    @Test
+    fun dayParts_before6amBelongsToPreviousDay() {
+        assertEquals(Triple(2026, 10, 20), FileUtils.dayParts(at(2026, 10, 21, 5, 59)))
+        assertEquals(Triple(2026, 10, 20), FileUtils.dayParts(at(2026, 10, 21, 0, 0)))
+    }
+
+    @Test
+    fun dayParts_from6amBelongsToSameDay() {
+        assertEquals(Triple(2026, 10, 21), FileUtils.dayParts(at(2026, 10, 21, 6, 0)))
+        assertEquals(Triple(2026, 10, 21), FileUtils.dayParts(at(2026, 10, 21, 23, 59)))
+    }
+
+    @Test
+    fun dayParts_crossesMonthAndYear() {
+        assertEquals(Triple(2026, 12, 31), FileUtils.dayParts(at(2027, 1, 1, 3)))
+        assertEquals(Triple(2026, 9, 30), FileUtils.dayParts(at(2026, 10, 1, 5)))
+    }
+
+    @Test
+    fun startOfWorkDay_before6amIsPreviousDaySixAm() {
+        assertEquals(at(2026, 10, 20, 6), FileUtils.startOfWorkDay(at(2026, 10, 21, 4)))
+        assertEquals(at(2026, 10, 21, 6), FileUtils.startOfWorkDay(at(2026, 10, 21, 6)))
     }
 }

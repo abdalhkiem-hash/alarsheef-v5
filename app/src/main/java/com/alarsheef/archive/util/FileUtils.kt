@@ -50,8 +50,13 @@ object FileUtils {
         return candidate
     }
 
-    fun today(): Triple<Int, Int, Int> {
-        val cal = Calendar.getInstance()
+    /** ساعة بداية يوم العمل: اليوم يبدأ 6 صباحًا وينتهي 6 صباحًا من اليوم التالي. */
+    const val DAY_START_HOUR = 6
+
+    /** سنة/شهر/يوم يوم العمل الذي يقع فيه [millis]. ما قبل الساعة 6 صباحًا يُحسب من اليوم السابق. */
+    fun dayParts(millis: Long): Triple<Int, Int, Int> {
+        val cal = Calendar.getInstance().apply { timeInMillis = millis }
+        if (cal.get(Calendar.HOUR_OF_DAY) < DAY_START_HOUR) cal.add(Calendar.DAY_OF_MONTH, -1)
         return Triple(
             cal.get(Calendar.YEAR),
             cal.get(Calendar.MONTH) + 1,
@@ -59,10 +64,15 @@ object FileUtils {
         )
     }
 
-    /** بداية اليوم الحالي بالمللي ثانية — معيار الأرشفة اليومية "اليوم بيومه". */
-    fun startOfToday(): Long {
-        val cal = Calendar.getInstance()
-        cal.set(Calendar.HOUR_OF_DAY, 0)
+    fun today(): Triple<Int, Int, Int> = dayParts(System.currentTimeMillis())
+
+    /** بداية يوم العمل الحالي (الساعة 6 صباحًا) بالمللي ثانية — معيار الأرشفة اليومية "اليوم بيومه". */
+    fun startOfToday(): Long = startOfWorkDay(System.currentTimeMillis())
+
+    fun startOfWorkDay(millis: Long): Long {
+        val cal = Calendar.getInstance().apply { timeInMillis = millis }
+        if (cal.get(Calendar.HOUR_OF_DAY) < DAY_START_HOUR) cal.add(Calendar.DAY_OF_MONTH, -1)
+        cal.set(Calendar.HOUR_OF_DAY, DAY_START_HOUR)
         cal.set(Calendar.MINUTE, 0)
         cal.set(Calendar.SECOND, 0)
         cal.set(Calendar.MILLISECOND, 0)

@@ -179,10 +179,10 @@ fun AddFab(
             text = { Text("إضافة") },
             icon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) }
         )
-        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-            DropdownMenuItem(
-                text = { Text("إنشاء — التقاط صورة") },
-                leadingIcon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) },
+        ArsheefDropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            ArsheefMenuItem(
+                text = "إنشاء — التقاط صورة",
+                icon = Icons.Filled.CameraAlt,
                 onClick = {
                     menuExpanded = false
                     val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -195,17 +195,17 @@ fun AddFab(
                     }
                 }
             )
-            DropdownMenuItem(
-                text = { Text("استيراد — من المعرض/الجهاز") },
-                leadingIcon = { Icon(Icons.Filled.PhotoLibrary, contentDescription = null) },
+            ArsheefMenuItem(
+                text = "استيراد — من المعرض/الجهاز",
+                icon = Icons.Filled.PhotoLibrary,
                 onClick = {
                     menuExpanded = false
                     galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }
             )
-            DropdownMenuItem(
-                text = { Text("مسح مستند") },
-                leadingIcon = { Icon(Icons.Filled.DocumentScanner, contentDescription = null) },
+            ArsheefMenuItem(
+                text = "مسح مستند",
+                icon = Icons.Filled.DocumentScanner,
                 onClick = {
                     menuExpanded = false
                     val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -220,9 +220,9 @@ fun AddFab(
                 }
             )
             if (FeatureFlags.SUB_FOLDERS_ENABLED) {
-                DropdownMenuItem(
-                    text = { Text("إضافة مجلد") },
-                    leadingIcon = { Icon(Icons.Filled.Create, contentDescription = null) },
+                ArsheefMenuItem(
+                    text = "إضافة مجلد",
+                    icon = Icons.Filled.Create,
                     onClick = {
                         menuExpanded = false
                         onAddFolder()
@@ -230,9 +230,9 @@ fun AddFab(
                 )
             }
             if (onAddDay != null) {
-                DropdownMenuItem(
-                    text = { Text("إضافة يوم") },
-                    leadingIcon = { Icon(Icons.Filled.CalendarViewDay, contentDescription = null) },
+                ArsheefMenuItem(
+                    text = "إضافة يوم",
+                    icon = Icons.Filled.CalendarViewDay,
                     onClick = {
                         menuExpanded = false
                         onAddDay()
@@ -240,22 +240,22 @@ fun AddFab(
                 )
             }
             if (onExportAll != null) {
-                DropdownMenuItem(
-                    text = { Text("تصدير كل الملفات (ZIP)") },
-                    leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null) },
+                ArsheefMenuItem(
+                    text = "تصدير كل الملفات (ZIP)",
+                    icon = Icons.Filled.Share,
                     onClick = { menuExpanded = false; onExportAll() }
                 )
             }
             if (onImportZip != null) {
-                DropdownMenuItem(
-                    text = { Text("استيراد أرشيف (ZIP)") },
-                    leadingIcon = { Icon(Icons.Filled.Create, contentDescription = null) },
+                ArsheefMenuItem(
+                    text = "استيراد أرشيف (ZIP)",
+                    icon = Icons.Filled.Create,
                     onClick = { menuExpanded = false; onImportZip() }
                 )
             }
-            DropdownMenuItem(
-                text = { Text("دمج عدة صفحات") },
-                leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
+            ArsheefMenuItem(
+                text = "دمج عدة صفحات",
+                icon = Icons.Filled.ContentCopy,
                 onClick = {
                     menuExpanded = false
                     showMergeDialog = true

@@ -50,6 +50,12 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Delete
+import com.alarsheef.archive.ui.components.ArsheefDropdownMenu
+import com.alarsheef.archive.ui.components.ArsheefMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -588,11 +594,11 @@ private fun YearRowCard(
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = TextMuted)
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(text = { Text("تصدير هذه السنة (ZIP)") }, onClick = { menuOpen = false; onExport() })
-                    DropdownMenuItem(text = { Text("مشاركة كل ملفات السنة") }, onClick = { menuOpen = false; onShare() })
-                    DropdownMenuItem(text = { Text("تسمية مخصصة") }, onClick = { menuOpen = false; onLabel() })
-                    DropdownMenuItem(text = { Text("حذف", color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; onDelete() })
+                ArsheefDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    ArsheefMenuItem("تصدير هذه السنة (ZIP)", icon = Icons.Filled.Archive, onClick = { menuOpen = false; onExport() })
+                    ArsheefMenuItem("مشاركة كل ملفات السنة", icon = Icons.Filled.Share, onClick = { menuOpen = false; onShare() })
+                    ArsheefMenuItem("تسمية مخصصة", icon = Icons.Filled.Edit, onClick = { menuOpen = false; onLabel() })
+                    ArsheefMenuItem("حذف", icon = Icons.Filled.Delete, destructive = true, onClick = { menuOpen = false; onDelete() })
                 }
             }
         }

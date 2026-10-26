@@ -37,6 +37,13 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Delete
+import com.alarsheef.archive.ui.components.ArsheefDropdownMenu
+import com.alarsheef.archive.ui.components.ArsheefMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
@@ -333,11 +340,11 @@ private fun DayRowCard(
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Filled.MoreVert, contentDescription = "خيارات", tint = TextMuted)
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(text = { Text("تصدير هذا اليوم (ZIP)") }, onClick = { menuOpen = false; onExport() })
-                    DropdownMenuItem(text = { Text("مشاركة كل ملفات اليوم") }, onClick = { menuOpen = false; onShare() })
-                    DropdownMenuItem(text = { Text("تسمية مخصصة") }, onClick = { menuOpen = false; onLabel() })
-                    DropdownMenuItem(text = { Text("حذف", color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; onDelete() })
+                ArsheefDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    ArsheefMenuItem("تصدير هذا اليوم (ZIP)", icon = Icons.Filled.Archive, onClick = { menuOpen = false; onExport() })
+                    ArsheefMenuItem("مشاركة كل ملفات اليوم", icon = Icons.Filled.Share, onClick = { menuOpen = false; onShare() })
+                    ArsheefMenuItem("تسمية مخصصة", icon = Icons.Filled.Edit, onClick = { menuOpen = false; onLabel() })
+                    ArsheefMenuItem("حذف", icon = Icons.Filled.Delete, destructive = true, onClick = { menuOpen = false; onDelete() })
                 }
             }
         }

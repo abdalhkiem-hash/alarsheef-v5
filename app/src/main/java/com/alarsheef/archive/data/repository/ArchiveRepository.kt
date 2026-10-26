@@ -382,10 +382,7 @@ class ArchiveRepository(context: Context, database: AppDatabase? = null) {
             val dateMillis = originalDate?.takeIf { it > 0 }
                 ?: sourceFile.lastModified().takeIf { it > 0 }
                 ?: System.currentTimeMillis()
-            val cal = java.util.Calendar.getInstance().apply { timeInMillis = dateMillis }
-            val year = cal.get(java.util.Calendar.YEAR)
-            val month = cal.get(java.util.Calendar.MONTH) + 1
-            val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+            val (year, month, day) = FileUtils.dayParts(dateMillis)
             val targetDir = FileUtils.dayFolder(rootDir, year, month, day)
             val ext = sourceFile.extension.ifBlank { "jpg" }
             val chosenName = preferredBaseName

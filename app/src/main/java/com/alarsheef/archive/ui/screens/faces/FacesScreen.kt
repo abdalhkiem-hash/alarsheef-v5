@@ -35,6 +35,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import com.alarsheef.archive.ui.components.ArsheefDropdownMenu
+import com.alarsheef.archive.ui.components.ArsheefMenuItem
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -184,13 +186,16 @@ private fun GroupsList(
                         ) {
                             Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
                                 FaceCircle(path = grp.coverCropPath)
-                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text("تسمية المجموعة") },
+                                ArsheefDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    ArsheefMenuItem(
+                                        text = "تسمية المجموعة",
+                                        icon = Icons.Filled.Edit,
                                         onClick = { menuOpen = false; onRename(grp) }
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("حذف المجموعة", color = MaterialTheme.colorScheme.error) },
+                                    ArsheefMenuItem(
+                                        text = "حذف المجموعة",
+                                        icon = Icons.Filled.Delete,
+                                        destructive = true,
                                         onClick = { menuOpen = false; onDelete(grp) }
                                     )
                                 }
