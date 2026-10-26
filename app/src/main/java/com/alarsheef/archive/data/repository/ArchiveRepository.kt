@@ -30,6 +30,7 @@ import com.alarsheef.archive.scanner.ImportRules
 import com.alarsheef.archive.util.ArchiveNaming
 import com.alarsheef.archive.util.DocumentName
 import com.alarsheef.archive.util.FileUtils
+import com.alarsheef.archive.util.ImageCompressor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -356,6 +357,7 @@ class ArchiveRepository(context: Context, database: AppDatabase? = null) {
         ocrText: String? = null,
     ): ImportResult = withContext(Dispatchers.IO) {
         var destination: File? = null
+        var compressed: ImageCompressor.Result? = null
         try {
             if (!sourceFile.exists() || sourceFile.length() == 0L) return@withContext ImportResult.Failed
 
@@ -384,7 +386,9 @@ class ArchiveRepository(context: Context, database: AppDatabase? = null) {
                 ?: System.currentTimeMillis()
             val (year, month, day) = FileUtils.dayParts(dateMillis)
             val targetDir = FileUtils.dayFolder(rootDir, year, month, day)
-            val ext = sourceFile.extension.ifBlank { "jpg" }
+            // الضغط بعد حساب البصمة على الأصل. null = تُحفظ الصورة كما هي.
+            compressed = ImageCompressor.compress(context, sourceFile)
+            val ext = compressed?.extension ?: sourceFile.extension.ifBlank { "jpg" }
             val chosenName = preferredBaseName
                 ?.let { com.alarsheef.archive.util.ArchiveNaming.sanitize(it) }
                 ?.takeIf { it.isNotBlank() }
@@ -395,7 +399,7 @@ class ArchiveRepository(context: Context, database: AppDatabase? = null) {
             val destFile = File(targetDir, destName)
             destination = destFile
 
-            sourceFile.copyTo(destFile, overwrite = true)
+            (compressed?.file ?: sourceFile).copyTo(destFile, overwrite = true)
             val capturedAt = dateMillis
             if (deleteSourceAfterImport) sourceFile.delete()
 
@@ -429,6 +433,8 @@ class ArchiveRepository(context: Context, database: AppDatabase? = null) {
             // على القرص بلا سجل — نحذفه حتى لا يتراكم كملف يتيم.
             destination?.let { dest -> runCatching { if (dest.exists()) dest.delete() } }
             ImportResult.Failed
+        } finally {
+            compressed?.let { runCatching { it.file.delete() } }
         }
     }
 
