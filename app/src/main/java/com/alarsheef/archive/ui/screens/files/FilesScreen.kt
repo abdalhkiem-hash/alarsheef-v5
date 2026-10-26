@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.AccountBalanceWallet
@@ -612,8 +616,19 @@ private fun ImageViewer(
     // التكبير للصفحة الحالية فقط (يُصفَّر عند تغيير الصفحة) — مرفوع هنا ليتحكم به زرا + و−
     var zoom by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    // التفاصيل مطوية افتراضيًا ليأخذ عرض الصورة أكبر مساحة ممكنة
+    var showInfo by remember { mutableStateOf(false) }
+    var areaSize by remember { mutableStateOf(IntSize.Zero) }
     val page = pagerState.currentPage
     val current = images.getOrNull(page)
+
+    /** يمنع سحب الصورة المكبّرة خارج حدودها: أقصى إزاحة = نصف الزيادة الناتجة عن التكبير. */
+    fun clampOffset(value: Offset, scale: Float): Offset {
+        if (scale <= 1f) return Offset.Zero
+        val maxX = areaSize.width * (scale - 1f) / 2f
+        val maxY = areaSize.height * (scale - 1f) / 2f
+        return Offset(value.x.coerceIn(-maxX, maxX), value.y.coerceIn(-maxY, maxY))
+    }
 
     BackHandler(onBack = onClose)
     LaunchedEffect(page) {
@@ -624,25 +639,33 @@ private fun ImageViewer(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(GradientStart, GradientMid, GradientEnd)))
+            .background(Brush.verticalGradient(listOf(Color(0xFF05090F), Color(0xFF0A1118), Color(0xFF0A1118))))
     ) {
         Column(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
-            // شريط علوي زجاجي (تصميم 6): رجوع يمين، اسم الملف وسط، تسمية ومشاركة يسار
+            // شريط علوي زجاجي (تصميم 6): رجوع يمين، اسم الملف وسط، تفاصيل وتسمية ومشاركة يسار
             GlassTopBar(
                 title = current?.fileName ?: "",
                 onBack = onClose,
                 actions = {
+                    GlassIconButton(
+                        Icons.Filled.Info, "التفاصيل", { showInfo = !showInfo },
+                        tint = if (showInfo) Accent else Color.White
+                    )
                     GlassIconButton(Icons.Filled.Edit, "إعادة تسمية", { renaming = current })
                     GlassIconButton(Icons.Filled.Share, "مشاركة", { current?.let(onShare) })
                 }
             )
 
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                // الصفحات المجاورة تظهر جزئيًا على الجانبين (contentPadding) كما في التصميم
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .onSizeChanged { areaSize = it }
+            ) {
+                // الصورة بعرض الشاشة كاملًا بلا بطاقة ولا هوامش؛ التنقّل بالسحب أو بالسهمين
                 HorizontalPager(
                     state = pagerState,
-                    contentPadding = PaddingValues(horizontal = 40.dp, vertical = 8.dp),
-                    pageSpacing = 12.dp,
+                    pageSpacing = 16.dp,
                     modifier = Modifier.fillMaxSize()
                 ) { index ->
                     // القائمة قد تقصر أثناء العرض (حذف/رفض بالخلفية) قبل أن يُحدَّث عدد الصفحات
@@ -651,9 +674,19 @@ private fun ImageViewer(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(Radius.Hero))
-                            .background(Glass)
-                            .border(1.dp, GlassBorder, RoundedCornerShape(Radius.Hero))
+                            // نقرتان: تكبير إلى 2.5× ثم عودة للحجم الكامل
+                            .pointerInput(index, isCurrent) {
+                                detectTapGestures(onDoubleTap = {
+                                    if (isCurrent) {
+                                        if (zoom > 1f) {
+                                            zoom = 1f
+                                            offset = Offset.Zero
+                                        } else {
+                                            zoom = 2.5f
+                                        }
+                                    }
+                                })
+                            }
                             .pointerInput(index, isCurrent) {
                                 awaitEachGesture {
                                     awaitFirstDown(requireUnconsumed = false)
@@ -666,15 +699,15 @@ private fun ImageViewer(
                                         val panChange = event.calculatePan()
                                         if (pressedCount >= 2) {
                                             // إصبعان فأكثر: تقريب/تصغير، وتحريك داخل الصورة عند التكبير فقط
-                                            val newScale = (zoom * zoomChange).coerceIn(1f, 5f)
+                                            val newScale = (zoom * zoomChange).coerceIn(1f, 6f)
                                             zoom = newScale
-                                            offset = if (newScale <= 1f) Offset.Zero else offset + panChange
+                                            offset = clampOffset(offset + panChange, newScale)
                                             if (zoomChange != 1f || panChange != Offset.Zero) {
                                                 event.changes.forEach { if (it.positionChanged()) it.consume() }
                                             }
                                         } else if (zoom > 1f && panChange != Offset.Zero) {
                                             // إصبع واحد والصورة مكبّرة: تحريك داخلها دون تغيير الصفحة
-                                            offset += panChange
+                                            offset = clampOffset(offset + panChange, zoom)
                                             event.changes.forEach { if (it.positionChanged()) it.consume() }
                                         }
                                     }
@@ -688,7 +721,6 @@ private fun ImageViewer(
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(8.dp)
                                 .graphicsLayer(
                                     scaleX = if (isCurrent) zoom else 1f,
                                     scaleY = if (isCurrent) zoom else 1f,
@@ -713,13 +745,11 @@ private fun ImageViewer(
                         modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp)
                     )
                 }
-            }
-
-            // مؤشر الصفحات + عدّاد + عناصر التكبير
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+                // عدّاد الصفحات وأزرار التكبير فوق الصورة بدل صفٍّ مستقل يأخذ من مساحتها
+                Column(
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                 if (images.size in 2..9) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         repeat(images.size) { i ->
@@ -746,8 +776,8 @@ private fun ImageViewer(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
-                            zoom = (zoom - 0.5f).coerceIn(1f, 5f)
-                            if (zoom <= 1f) offset = Offset.Zero
+                            zoom = (zoom - 0.5f).coerceIn(1f, 6f)
+                            offset = clampOffset(offset, zoom)
                         }) { Icon(Icons.Filled.Remove, contentDescription = "تصغير", tint = Color.White) }
                         Text(
                             "${(zoom * 100).roundToInt()}%",
@@ -757,14 +787,15 @@ private fun ImageViewer(
                             modifier = Modifier.width(56.dp),
                             textAlign = TextAlign.Center
                         )
-                        IconButton(onClick = { zoom = (zoom + 0.5f).coerceIn(1f, 5f) }) {
+                        IconButton(onClick = { zoom = (zoom + 0.5f).coerceIn(1f, 6f) }) {
                             Icon(Icons.Filled.Add, contentDescription = "تكبير", tint = Color.White)
                         }
                     }
                 }
+                }
             }
 
-            if (current != null) ViewerInfoPanel(repository, current)
+            if (showInfo && current != null) ViewerInfoPanel(repository, current)
         }
 
         renaming?.let { img ->
