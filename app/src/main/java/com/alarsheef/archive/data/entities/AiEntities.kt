@@ -73,5 +73,7 @@ data class AiCloudMeta(
     val currency: String?,
     val details: String?,
     val model: String,
-    val analyzedAt: Long
+    val analyzedAt: Long,
+    /** رقم المرجع كما كُتب في المستند (رقم الفاتورة أو الحوالة أو العملية). */
+    val reference: String? = null
 )

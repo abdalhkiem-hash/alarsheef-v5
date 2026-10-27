@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Tag
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
@@ -865,6 +866,22 @@ private fun ViewerInfoPanel(repository: ArchiveRepository, current: ArchivedImag
                     }
                 )
                 DetailItem(Icons.Filled.CalendarMonth, "التاريخ", cloudMeta?.invoiceDate)
+            }
+            cloudMeta?.reference?.takeIf { it.isNotBlank() }?.let { ref ->
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Tag, contentDescription = null, tint = Accent, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("المرجع: ", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+                    // أرقام المرجع تُعرض LTR وقابلة للنسخ حتى لا ينعكس ترتيب رموزها داخل نص عربي
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(
+                            "⁦$ref⁩",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
             }
 
             if (aiLabels.isNotEmpty()) {

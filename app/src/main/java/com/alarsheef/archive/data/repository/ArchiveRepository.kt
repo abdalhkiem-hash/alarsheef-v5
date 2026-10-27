@@ -706,7 +706,8 @@ class ArchiveRepository(context: Context, database: AppDatabase? = null) {
             currency = invoice?.currency,
             details = invoice?.details,
             model = model,
-            analyzedAt = System.currentTimeMillis()
+            analyzedAt = System.currentTimeMillis(),
+            reference = invoice?.reference
         )
     )
 

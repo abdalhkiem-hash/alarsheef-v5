@@ -10,6 +10,8 @@ data class InvoiceInfo(
     val amount: String?,
     val currency: String?,
     val details: String?,
+    /** رقم المرجع كما كُتب (رقم الفاتورة/الحوالة/العملية). */
+    val reference: String? = null,
 )
 
 /** نتيجة التصنيف السحابي: وسوم + وصف عربي + فاتورة اختيارية. */
@@ -75,9 +77,10 @@ object GeminiClassifier {
                 amount = field("amount"),
                 currency = field("currency"),
                 details = field("details"),
+                reference = field("reference"),
             )
-            // لا نعتبر "فاتورة" ما لم يُذكر جهة أو مبلغ أو بنود فعلية
-            if (info.vendor == null && info.amount == null && info.details == null) null else info
+            // لا نعتبر "فاتورة" ما لم يُذكر جهة أو مبلغ أو بنود أو رقم مرجع فعلي
+            if (info.vendor == null && info.amount == null && info.details == null && info.reference == null) null else info
         }
 
         GeminiClassification(labels, description, invoice, fullText)
@@ -121,7 +124,8 @@ object GeminiClassifier {
                 "date": {"type": "STRING"},
                 "amount": {"type": "STRING"},
                 "currency": {"type": "STRING"},
-                "details": {"type": "STRING"}
+                "details": {"type": "STRING"},
+                "reference": {"type": "STRING"}
               }
             }
           },
@@ -139,7 +143,9 @@ object GeminiClassifier {
         - description: وصف عربي دقيق من جملة واحدة لما تراه في الصورة.
         - invoice: إن كانت الصورة فاتورة أو إيصالًا ماليًا فاملئ:
           vendor (اسم الجهة أو المتجر)، date (تاريخ الإصدار كما هو مكتوب)،
-          amount (المبلغ كما هو)، currency (العملة)، details (أهم البنود باختصارًا).
+          amount (المبلغ كما هو)، currency (العملة)، details (أهم البنود باختصارًا)،
+          reference (رقم المرجع الرئيسي كما هو مكتوب: رقم الفاتورة أو رقم الحوالة أو كود/مرجع العملية،
+          بالأرقام والحروف نفسها بلا تعديل؛ واتركه فارغًا إن لم يوجد رقم واضح).
           وإن لم تكن مالية فاترك invoice حقلًا فارغًا أو احذفه.
     """.trimIndent()
 }
