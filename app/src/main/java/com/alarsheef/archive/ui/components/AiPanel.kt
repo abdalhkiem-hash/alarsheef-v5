@@ -142,6 +142,20 @@ fun AiPanelContent(
                     )
                 }
             }
+            val missingRefs by repository.observeMissingReferenceCount().collectAsStateWithLifecycle(initialValue = 0)
+            if (missingRefs > 0) {
+                BtnOutline(
+                    "استخراج رقم المرجع للمستندات القديمة ($missingRefs)",
+                    onClick = {
+                        com.alarsheef.archive.work.ReferenceBackfillWorker.start(context)
+                        android.widget.Toast.makeText(
+                            context, "بدأ الاستخراج في الخلفية ضمن حصتك اليومية", android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+                NoteSmall("يعالج حتى ${GeminiRepository.DAILY_LIMIT} مستندًا في اليوم (نداء لكل مستند) ويكمل في اليوم التالي بالزر نفسه.")
+            }
             Text(
                 "تُستدعى السحابة للصور الغامضة أو الثقة المنخفضة والمستندات فقط، " +
                     "ومحاولة واحدة لكل استدعاء لحماية حدك اليومي.",

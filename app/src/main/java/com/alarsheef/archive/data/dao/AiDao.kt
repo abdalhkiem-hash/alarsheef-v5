@@ -62,6 +62,29 @@ interface AiDao {
     @Query("DELETE FROM ai_cloud_meta WHERE imageId IN (:ids)")
     suspend fun deleteCloudMetaForImageIds(ids: List<Long>)
 
+    // ---------- استخراج رقم المرجع للمستندات المحلَّلة قبل إضافة الحقل ----------
+    // reference = NULL تعني «لم يُسأل عنه بعد»؛ «» تعني «سُئل ولا رقم واضح»، فلا يُعاد السؤال.
+
+    @Query(
+        """SELECT i.* FROM archived_images i JOIN ai_cloud_meta m ON m.imageId = i.id
+           WHERE m.reference IS NULL
+             AND (m.vendor IS NOT NULL OR m.amount IS NOT NULL OR m.details IS NOT NULL)
+             AND i.contentVerified NOT IN (2, 3)
+           ORDER BY i.capturedAt DESC LIMIT :limit"""
+    )
+    suspend fun imagesMissingReference(limit: Int): List<com.alarsheef.archive.data.entities.ArchivedImage>
+
+    @Query(
+        """SELECT COUNT(*) FROM ai_cloud_meta m JOIN archived_images i ON m.imageId = i.id
+           WHERE m.reference IS NULL
+             AND (m.vendor IS NOT NULL OR m.amount IS NOT NULL OR m.details IS NOT NULL)
+             AND i.contentVerified NOT IN (2, 3)"""
+    )
+    fun observeMissingReferenceCount(): Flow<Int>
+
+    @Query("UPDATE ai_cloud_meta SET reference = :reference WHERE imageId = :imageId")
+    suspend fun setReference(imageId: Long, reference: String)
+
     // ---------- مجموعات الوجوه ----------
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)

@@ -707,9 +707,16 @@ class ArchiveRepository(context: Context, database: AppDatabase? = null) {
             details = invoice?.details,
             model = model,
             analyzedAt = System.currentTimeMillis(),
-            reference = invoice?.reference
+            // «» = سُئل ولا رقم واضح، فلا يدخل في استخراج المراجع المتأخر (NULL فقط للصفوف القديمة)
+            reference = invoice?.reference ?: ""
         )
     )
+
+    suspend fun imagesMissingReference(limit: Int) = aiDao.imagesMissingReference(limit)
+
+    fun observeMissingReferenceCount() = aiDao.observeMissingReferenceCount()
+
+    suspend fun setReference(imageId: Long, reference: String) = aiDao.setReference(imageId, reference)
 
     suspend fun upsertFaceGroup(groupKey: String, name: String?) =
         aiDao.insertFaceGroup(com.alarsheef.archive.data.entities.FaceGroup(groupKey, name))
