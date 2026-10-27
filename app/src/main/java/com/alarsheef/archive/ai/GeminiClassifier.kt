@@ -17,6 +17,8 @@ data class GeminiClassification(
     val labels: List<ClassifiedLabel>,
     val description: String,
     val invoice: InvoiceInfo?,
+    /** النص الكامل للصورة، يُعاد فقط حين طُلب مع التصنيف في نداء واحد. */
+    val text: String? = null,
 )
 
 /**
@@ -28,19 +30,24 @@ data class GeminiClassification(
  */
 object GeminiClassifier {
 
-    suspend fun classify(file: File, usePro: Boolean): GeminiClassification? {
+    /**
+     * @param includeText يطلب مع التصنيف النص الحرفي الكامل في **نداء واحد** بدل نداء OCR منفصل،
+     *        فينخفض الاستهلاك من محاولتين إلى واحدة لكل مستند. الصورة تُرسل بدقة أعلى حينها.
+     */
+    suspend fun classify(file: File, usePro: Boolean, includeText: Boolean = false): GeminiClassification? {
         val json = GeminiRepository.generateContent(
-            prompt = CLASSIFY_PROMPT,
+            prompt = if (includeText) CLASSIFY_PROMPT + "\n" + TEXT_PROMPT_ADDON else CLASSIFY_PROMPT,
             image = file,
             usePro = usePro,
-            jsonSchema = SCHEMA,
-            maxImageDimension = 1024,
+            jsonSchema = if (includeText) SCHEMA_WITH_TEXT else SCHEMA,
+            maxImageDimension = if (includeText) 1600 else 1024,
         ) ?: return null
         return parse(json)
     }
 
     private fun parse(json: String): GeminiClassification? = runCatching {
         val obj = JSONObject(json)
+        val fullText = obj.optString("fullText").trim().takeIf { it.isNotBlank() && it != "null" }
 
         val labels = obj.optJSONArray("labels")?.let { arr ->
             (0 until arr.length()).mapNotNull { i ->
@@ -73,8 +80,23 @@ object GeminiClassifier {
             if (info.vendor == null && info.amount == null && info.details == null) null else info
         }
 
-        GeminiClassification(labels, description, invoice)
+        GeminiClassification(labels, description, invoice, fullText)
     }.getOrNull()?.takeIf { it.labels.isNotEmpty() || it.description.isNotBlank() }
+
+    /** المخطط نفسه مع حقل النص الكامل (غير مطلوب، فلا يُفشل الرد إن غاب). */
+    private val SCHEMA_WITH_TEXT: String by lazy {
+        SCHEMA.replace(
+            "\"description\": {\"type\": \"STRING\"},",
+            "\"description\": {\"type\": \"STRING\"},\n    \"fullText\": {\"type\": \"STRING\"},"
+        )
+    }
+
+    private val TEXT_PROMPT_ADDON = """
+
+        - fullText: كل النص الظاهر في الصورة حرفيًا بلغته الأصلية (خاصة العربية بترقيمها العربي-الهندي)
+          مع الحفاظ على أسطره وترتيبه، بلا ترجمة ولا تلخيص ولا تعليق.
+          وإن لم يكن في الصورة أي نص فاكتب بالضبط: لا يوجد نص
+    """.trimIndent()
 
     private val SCHEMA = """
         {

@@ -35,8 +35,15 @@ object GeminiRepository {
     /** نموذج سريع ورخيص — الافتراضي لتقليل استهلاك الحد اليومي. (2.5-flash موقوف لحسابات جديدة فحُدِّث لـ3.5) */
     const val MODEL_FLASH = "gemini-3.5-flash"
 
-    /** نموذج أقوى (اختياري عبر الإعدادات) — 2.5-pro موقوف لحسابات جديدة فحُدِّث لاقتراح الـAPI. */
-    const val MODEL_PRO = "gemini-3.1-pro-preview"
+    /**
+     * بديل يُستخدم تلقائيًا إن أعاد Google 404 للنموذج الأساسي (تقاعد الاسم). الاسم المستعار
+     * `gemini-flash-latest` يشير دائمًا لأحدث نموذج Flash، فلا يتعطل الذكاء السحابي بصمت.
+     * نموذج Pro أُزيل: مفتاح الطبقة المجانية يرفضه (429) ولا يحتاجه أرشيف مستندات.
+     */
+    const val MODEL_FALLBACK = "gemini-flash-latest"
+
+    @Volatile
+    private var activeModel: String = MODEL_FLASH
 
     /** سقف محاولات سحابية يومية يُحترم قبل أي استدعاء. */
     const val DAILY_LIMIT = 50
@@ -84,7 +91,17 @@ object GeminiRepository {
     /** هل أُضيف المفتاح فعلًا في local.properties؟ */
     fun isConfigured(): Boolean = BuildConfig.GEMINI_API_KEY.isNotBlank()
 
-    fun model(usePro: Boolean): String = if (usePro) MODEL_PRO else MODEL_FLASH
+    /** النموذج الفعّال حاليًا. [usePro] مُبقى في التوقيع فقط، لا يغيّر النموذج. */
+    @Suppress("UNUSED_PARAMETER")
+    fun model(usePro: Boolean = false): String = activeModel
+
+    /** يُحوَّل إلى البديل مرة واحدة عند 404؛ يعيد true لو تغيّر النموذج فتستحق المحاولة إعادة. */
+    private fun switchToFallback(): Boolean {
+        if (activeModel == MODEL_FALLBACK) return false
+        Log.w(TAG, "النموذج $activeModel غير متاح (404)، التحويل إلى $MODEL_FALLBACK")
+        activeModel = MODEL_FALLBACK
+        return true
+    }
 
     /**
      * استدعاء عام generateContent.
@@ -136,6 +153,9 @@ object GeminiRepository {
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code == 404 && switchToFallback()) {
+                    return@withContext generateContent(prompt, image, usePro, jsonSchema, maxImageDimension)
+                }
                 if (code !in 200..299) {
                     pauseFor(code, networkFailed = false)
                     Log.w(TAG, "HTTP $code من Gemini: ${response.take(300)}")

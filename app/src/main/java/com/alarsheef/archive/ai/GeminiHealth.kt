@@ -38,12 +38,18 @@ object GeminiHealth {
         Status.OTHER -> "رد غير متوقع"
     }
 
-    /** يفحص النموذج السريع ثم Pro. المفتاح المفقود يعيد تقريرًا بلا نداء شبكة. */
+    /** يفحص النموذج الفعّال، فإن لم يوجد (404) فحص البديل أيضًا. المفتاح المفقود يعيد تقريرًا بلا نداء شبكة. */
     suspend fun check(): Report {
         if (!GeminiRepository.isConfigured()) return Report(false, emptyList())
-        val results = listOf(GeminiRepository.MODEL_FLASH, GeminiRepository.MODEL_PRO).map { model ->
+        suspend fun run(model: String): ModelResult {
             val ping = GeminiRepository.ping(model)
-            ModelResult(model, classify(ping.httpCode, ping.networkFailed), ping.httpCode, ping.millis)
+            return ModelResult(model, classify(ping.httpCode, ping.networkFailed), ping.httpCode, ping.millis)
+        }
+        val primary = run(GeminiRepository.model())
+        val results = if (primary.status == Status.MODEL_NOT_FOUND && primary.model != GeminiRepository.MODEL_FALLBACK) {
+            listOf(primary, run(GeminiRepository.MODEL_FALLBACK))
+        } else {
+            listOf(primary)
         }
         return Report(true, results)
     }

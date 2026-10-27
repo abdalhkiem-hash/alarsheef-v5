@@ -55,7 +55,6 @@ fun AiPanelContent(
     val pending by repository.observePendingAiCount().collectAsStateWithLifecycle(initialValue = 0)
     val groups by repository.observeFaceGroupRows().collectAsStateWithLifecycle(initialValue = emptyList())
     val cloudEnabled by prefs.geminiCloudEnabled.collectAsStateWithLifecycle(initialValue = true)
-    val usePro by prefs.geminiUsePro.collectAsStateWithLifecycle(initialValue = false)
     val quota by prefs.geminiQuota.collectAsStateWithLifecycle(
         initialValue = com.alarsheef.archive.settings.GeminiQuota(0, GeminiRepository.DAILY_LIMIT)
     )
@@ -96,9 +95,7 @@ fun AiPanelContent(
         }
 
         if (cloudEnabled) {
-            SettingRow("استخدام نموذج ${GeminiRepository.MODEL_PRO} بدل ${GeminiRepository.MODEL_FLASH} الأرخص", usePro) {
-                scope.launch { prefs.setGeminiUsePro(it) }
-            }
+            NoteSmall("النموذج المستخدم: ${GeminiRepository.model()}", Modifier.padding(top = 4.dp))
             Text(
                 if (keyConfigured)
                     "المفتاح مضبوط (يُقرأ من local.properties وقت البناء). اضغط «فحص الاتصال» للتأكد من صلاحيته."

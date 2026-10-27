@@ -161,6 +161,25 @@ class AiAnalysisWorker(
                     FaceGroupingEngine.detectFaces(file)
                 } else emptyList()
 
+                // نص الصورة أولًا (قبل التصنيف السحابي): المخزَّن ثم المحلي الكافٍ. إن بقيت الحاجة لنص
+                // وسيُنادى Gemini للتصنيف، يُطلب النص معه في نداء واحد بدل نداء OCR ثانٍ.
+                val storedText = repository.ocrTextFor(image.id)?.takeIf { it.isNotBlank() }
+                var textSaved = false
+                var localText: String? = null
+                if (storedText != null) {
+                    ocrText = storedText
+                    textSaved = true
+                } else if (ocrEnabled) {
+                    localText = if (OcrEngine.isAvailable(context)) {
+                        OcrEngine.recognizeFile(context, file)
+                    } else null
+                    if (!localText.isNullOrBlank() && localText.length >= MIN_LOCAL_OCR_CHARS) {
+                        repository.saveOcrText(image.id, localText)
+                        ocrText = localText
+                        textSaved = true
+                    }
+                }
+
                 if (labelsEnabled) {
                     val local = SmartClassifier.classifyFile(file, faces.size)
                     var final = local
@@ -170,9 +189,19 @@ class AiAnalysisWorker(
                     val provenDocument = image.contentVerified == ContentVerified.ACCEPTED ||
                         ArchiveNaming.labelOf(image.fileName) != null
                     if (canCallCloud() && (provenDocument || needsCloudClassification(local))) {
-                        GeminiClassifier.classify(file, usePro)?.let { result ->
+                        val wantText = ocrEnabled && !textSaved
+                        GeminiClassifier.classify(file, usePro, includeText = wantText)?.let { result ->
                             commitQuota()
                             cloudCalls++
+                            // النص جاء مع التصنيف: يُحفظ بلا نداء OCR إضافي
+                            if (wantText) {
+                                val cloudText = result.text
+                                if (!cloudText.isNullOrBlank() && !ImportGate.isNoTextReply(cloudText)) {
+                                    repository.saveOcrText(image.id, cloudText)
+                                    ocrText = cloudText
+                                    textSaved = true
+                                }
+                            }
                             // وسوم الوجوه المحلية تُدمج مع نتيجة السحابة (لا نفقدها)
                             val merged = (result.labels + local.filter { it.label in FACE_LABELS })
                                 .distinctBy { it.label }
@@ -193,20 +222,10 @@ class AiAnalysisWorker(
 
                 // نص قرأته بوابة الاستيراد (أو تحليل سابق) يُعاد استخدامه — كان يُطلب OCR سحابي
                 // ثانٍ للصورة نفسها، فتنفد الحصة اليومية قبل الوصول إلى التسمية الذكية.
-                val storedText = repository.ocrTextFor(image.id)?.takeIf { it.isNotBlank() }
-                if (storedText != null) {
-                    ocrText = storedText
-                } else if (ocrEnabled) {
-                    val localText = if (OcrEngine.isAvailable(context)) {
-                        OcrEngine.recognizeFile(context, file)
-                    } else null
-                    val localAdequate = !localText.isNullOrBlank() && localText.length >= MIN_LOCAL_OCR_CHARS
+                // وإن لم يتوفر نص بعد (لم يُنادَ التصنيف السحابي أو لم يُرجع نصًا): OCR سحابي منفصل كما قبل.
+                if (!textSaved && ocrEnabled) {
                     var saved = false
-                    if (localAdequate) {
-                        repository.saveOcrText(image.id, localText!!)
-                        saved = true
-                        ocrText = localText
-                    } else if (canCallCloud()) {
+                    if (canCallCloud()) {
                         GeminiRepository.extractText(file, usePro)?.let { cloudText ->
                             if (cloudText.isNotBlank() && !ImportGate.isNoTextReply(cloudText)) {
                                 commitQuota()
