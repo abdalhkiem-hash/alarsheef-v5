@@ -31,7 +31,10 @@ import com.alarsheef.archive.work.AiAnalysisScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
+import com.alarsheef.archive.ai.GeminiHealth
 import com.alarsheef.archive.ai.GeminiRepository
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /**
  * لوحة "الذكاء الاصطناعي" في القائمة الجانبية:
@@ -58,6 +61,8 @@ fun AiPanelContent(
     )
     val ocrAvailable = remember { OcrEngine.isAvailable(context) }
     val keyConfigured = remember { GeminiRepository.isConfigured() }
+    var healthReport by remember { mutableStateOf<GeminiHealth.Report?>(null) }
+    var checking by remember { mutableStateOf(false) }
 
     Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
         PanelTitle("الذكاء الاصطناعي")
@@ -96,7 +101,7 @@ fun AiPanelContent(
             }
             Text(
                 if (keyConfigured)
-                    "المفتاح مضبوط ✓ (يُقرأ من local.properties وقت البناء)"
+                    "المفتاح مضبوط (يُقرأ من local.properties وقت البناء). اضغط «فحص الاتصال» للتأكد من صلاحيته."
                 else
                     "المفتاح غير مضبوط — أنشئه من aistudio.google.com/apikey وضعه في local.properties باسم GEMINI_API_KEY ثم أعد البناء.",
                 style = MaterialTheme.typography.bodySmall,
@@ -106,6 +111,39 @@ fun AiPanelContent(
             )
             quota.let { q ->
                 NoteSmall("استهلاك اليوم: ${q.used} من ${q.limit} استدعاء (يصفَّر كل يوم)", Modifier.padding(top = 4.dp))
+            }
+            BtnOutline(
+                if (checking) "جارٍ الفحص…" else "فحص الاتصال بـ Gemini",
+                onClick = {
+                    if (!checking) {
+                        checking = true
+                        scope.launch {
+                            healthReport = GeminiHealth.check()
+                            checking = false
+                        }
+                    }
+                },
+                modifier = Modifier.padding(top = 10.dp)
+            )
+            healthReport?.let { report ->
+                if (!report.keyConfigured) {
+                    Text(
+                        GeminiHealth.message(GeminiHealth.Status.KEY_MISSING),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+                report.results.forEach { r ->
+                    val ok = GeminiHealth.isOk(r.status)
+                    val seconds = String.format(java.util.Locale.ROOT, "%.1f", r.millis / 1000.0)
+                    Text(
+                        "${r.model}: ${GeminiHealth.message(r.status)}" + if (ok) " ($seconds ث)" else r.httpCode?.let { " [HTTP $it]" }.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (ok) TealBright else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
             Text(
                 "تُستدعى السحابة للصور الغامضة أو الثقة المنخفضة والمستندات فقط، " +

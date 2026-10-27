@@ -155,6 +155,49 @@ object GeminiRepository {
         }
     }
 
+    /** نتيجة نداء الفحص: رمز HTTP (null عند انقطاع الشبكة) ومدة الرد. */
+    class PingResult(val httpCode: Int?, val networkFailed: Boolean, val millis: Long)
+
+    /**
+     * نداء نصي صغير جدًا لنموذج معيّن للتحقق من المفتاح والنموذج.
+     * لا يخصم من الحصة اليومية ولا يفعّل تهدئة الاستدعاءات ([pauseFor])، فلا يؤثر على التحليل الفعلي.
+     */
+    suspend fun ping(model: String): PingResult = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        if (!isConfigured()) return@withContext PingResult(null, false, 0L)
+        try {
+            val body = JSONObject()
+                .put(
+                    "contents",
+                    org.json.JSONArray().put(
+                        JSONObject().put("role", "user")
+                            .put("parts", org.json.JSONArray().put(JSONObject().put("text", "اكتب كلمة: تم")))
+                    )
+                )
+                .put("generationConfig", JSONObject().put("temperature", 0.0))
+            val connection = URL("${BASE_URL}$model:generateContent").openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "POST"
+                connection.connectTimeout = CONNECT_TIMEOUT_MS
+                connection.readTimeout = READ_TIMEOUT_MS
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("x-goog-api-key", BuildConfig.GEMINI_API_KEY)
+                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val code = connection.responseCode
+                // يُستهلك الرد حتى يُغلق الاتصال نظيفًا
+                (if (code in 200..299) connection.inputStream else connection.errorStream)?.use { it.readBytes() }
+                PingResult(code, false, System.currentTimeMillis() - started)
+            } finally {
+                connection.disconnect()
+            }
+        } catch (e: IOException) {
+            PingResult(null, true, System.currentTimeMillis() - started)
+        } catch (e: Exception) {
+            PingResult(null, false, System.currentTimeMillis() - started)
+        }
+    }
+
     /** OCR سحابي: نص حرفي بالعربية (يعمل على أي إصدار أندرويد). */
     suspend fun extractText(file: File, usePro: Boolean): String? = generateContent(
         prompt = OCR_PROMPT,
