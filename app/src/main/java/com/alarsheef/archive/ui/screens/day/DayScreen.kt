@@ -227,7 +227,7 @@ Scaffold(
                             onShare = {
                                 scope.launch {
                                     val images = repository.byDayForExport(year, month, row.day)
-                                    shareUris(images.map { repository.getShareUri(it) }, "image/*")
+                                    shareUris(images.map { repository.getShareUri(it) }, com.alarsheef.archive.util.ShareMime.of(images))
                                 }
                             },
                             onLabel = { labelDialogScope = "d-$year-$month-${row.day}" },

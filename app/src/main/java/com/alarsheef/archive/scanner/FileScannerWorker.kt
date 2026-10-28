@@ -73,8 +73,6 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
 
         return try {
             val repository = ArchiveRepository(applicationContext)
-            val removed = repository.removeInboxCapturedBefore(FileUtils.startOfToday())
-            if (removed > 0) Log.i(TAG, "أُزيل من الأرشيف $removed ملفًا أقدم من اليوم")
             keepGateText = prefs.aiOcrEnabled.first()
             val existingPaths = ImportRules.normalizeExistingPaths(repository.findAllOriginalPaths())
             val done = repository.processedSourcePaths().toMutableSet()
@@ -90,7 +88,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                 )
             }
             if (folderUri != null) {
-                count += scanInbox(Uri.parse(folderUri), repository, existingPaths, done, SourceApp.INBOX)
+                count += scanDailyJournal(Uri.parse(folderUri), repository, existingPaths, done)
             }
             prefs.setLastScanAt(System.currentTimeMillis())
             if (count > 0) {
@@ -124,6 +122,88 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         val root = DocumentFile.fromTreeUri(applicationContext, treeUri) ?: return 0
         if (!root.isDirectory) return 0
         return visit(root, repository, existingPaths, done, FileUtils.startOfToday(), sourceApp, 0)
+    }
+
+    /**
+     * مجلد الإدخال = جذر أرشيف OneDrive. يدخل مجلد اليوم (`dd-MM-yyyy`) أينما كان تحت الجذر
+     * ويستورد منه ملف «اليوميه العامة» وحده، مرة واحدة. تاريخ الأرشفة تاريخ المجلد لا وقت الرفع.
+     */
+    private suspend fun scanDailyJournal(
+        treeUri: Uri,
+        repository: ArchiveRepository,
+        existingPaths: MutableSet<String>,
+        done: MutableSet<String>,
+    ): Int {
+        val root = DocumentFile.fromTreeUri(applicationContext, treeUri) ?: return 0
+        if (!root.isDirectory) return 0
+        val candidates = ImportRules.dailyFolderCandidates(System.currentTimeMillis())
+        val folders = findDailyFolders(root, candidates)
+        if (folders.isEmpty()) {
+            Log.i(TAG, "لا مجلد لليوم بعد (${candidates.joinToString { it.name }})")
+            return 0
+        }
+        for ((folder, day) in folders) {
+            currentCoroutineContext().ensureActive()
+            val doc = folder.listFiles().firstOrNull { f ->
+                val n = f.name.orEmpty()
+                f.isFile && ImportRules.isDailyFileName(n) &&
+                    ImportRules.inboxFileKind(n, 1L).let {
+                        it == ImportRules.InboxFileKind.PDF || it == ImportRules.InboxFileKind.IMAGE
+                    }
+            } ?: continue
+            val name = doc.name.orEmpty()
+            val identity = doc.uri.toString()
+            if (identity in done) return 0
+            val kind = ImportRules.inboxFileKind(name, doc.length().takeIf { it > 0L } ?: 1L)
+            return when (kind) {
+                ImportRules.InboxFileKind.PDF ->
+                    importPdfAsIs(doc, name, identity, repository, existingPaths, done, SourceApp.INBOX, day.noonMillis)
+                ImportRules.InboxFileKind.IMAGE ->
+                    importImage(doc, name, identity, repository, existingPaths, done, SourceApp.INBOX, day.noonMillis)
+                else -> 0
+            }
+        }
+        Log.i(TAG, "لا «${ImportRules.DAILY_FILE_NAME}» في مجلد اليوم بعد")
+        return 0
+    }
+
+    /**
+     * بحث بعرض المستويات عن مجلدات اليوم تحت [root]، بترتيب أولوية [candidates].
+     * يُتجاوز كل مجلد اسمه سنة غير سنة اليوم، فلا يتغيّر شيء مع سنة جديدة. السقف يحمي من
+     * شجرة كبيرة في السحابة.
+     */
+    private suspend fun findDailyFolders(
+        root: DocumentFile,
+        candidates: List<ImportRules.DailyFolder>,
+    ): List<Pair<DocumentFile, ImportRules.DailyFolder>> {
+        val years = candidates.map { it.name.takeLast(4).toInt() }
+        val found = HashMap<String, DocumentFile>()
+        var level = listOf(root)
+        var listings = 0
+        var depth = 0
+        while (level.isNotEmpty() && depth <= MAX_DAILY_SEARCH_DEPTH && listings < MAX_DAILY_SEARCH_LISTINGS) {
+            val next = ArrayList<DocumentFile>()
+            for (folder in level) {
+                if (listings >= MAX_DAILY_SEARCH_LISTINGS) break
+                currentCoroutineContext().ensureActive()
+                listings++
+                for (child in folder.listFiles()) {
+                    if (!child.isDirectory) continue
+                    val childName = child.name.orEmpty()
+                    if (candidates.any { it.name == childName }) {
+                        found.putIfAbsent(childName, child)
+                    } else if (years.any { ImportRules.shouldVisitDailySearchFolder(childName, it) }) {
+                        next.add(child)
+                    }
+                }
+            }
+            if (candidates.all { it.name in found }) break
+            // ما يحمل السنة في اسمه (2026، «اكتوبر 2026») أولًا.
+            level = next.sortedBy { f -> if (Regex("20\\d{2}").containsMatchIn(f.name.orEmpty())) 0 else 1 }
+            depth++
+        }
+        Log.i(TAG, "بحث مجلد اليوم: $listings قائمة، وُجد ${found.size}")
+        return candidates.mapNotNull { c -> found[c.name]?.let { it to c } }
     }
 
     private suspend fun visit(
@@ -193,6 +273,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         existingPaths: MutableSet<String>,
         done: MutableSet<String>,
         sourceApp: SourceApp,
+        dateOverride: Long? = null,
     ): Int {
         val temp = File(
             applicationContext.cacheDir,
@@ -210,7 +291,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     repository = repository,
                     file = temp,
                     identity = identity,
-                    originalDate = doc.lastModified(),
+                    originalDate = dateOverride ?: doc.lastModified(),
                     originalName = name,
                     ocrText = text,
                     existingPaths = existingPaths,
@@ -241,6 +322,65 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         }
     }
 
+    /**
+     * ملف PDF يُؤرشف كما هو (نفس البايتات، بامتداد .pdf) دون تحويله إلى صور.
+     * يُعرض بصفحاته عند الفتح. لا OCR ولا تحليل ذكي له؛ اسمه المرجع الوحيد.
+     */
+    private suspend fun importPdfAsIs(
+        doc: DocumentFile,
+        name: String,
+        identity: String,
+        repository: ArchiveRepository,
+        existingPaths: MutableSet<String>,
+        done: MutableSet<String>,
+        sourceApp: SourceApp,
+        dateOverride: Long?,
+    ): Int {
+        val temp = File(applicationContext.cacheDir, ImportRules.tempFileName("pdf", name, System.nanoTime()))
+        try {
+            copyTo(doc, temp) ?: return 0
+            if (temp.length() == 0L) {
+                Log.i(TAG, "يُترك حتى يكتمل: $name")
+                return 0
+            }
+            return when (
+                importOne(
+                    repository = repository,
+                    file = temp,
+                    identity = identity,
+                    originalDate = dateOverride ?: doc.lastModified(),
+                    originalName = name,
+                    ocrText = null,
+                    existingPaths = existingPaths,
+                    sourceApp = sourceApp,
+                    preferredBaseName = name.substringBeforeLast('.'),
+                )
+            ) {
+                is ImportResult.Added -> {
+                    repository.markSourceProcessed(identity)
+                    done.add(identity)
+                    Log.i(TAG, "أُرشف PDF كما هو: $name")
+                    1
+                }
+                is ImportResult.Duplicate -> {
+                    repository.markSourceProcessed(identity)
+                    done.add(identity)
+                    Log.i(TAG, "PDF مكرر (بصمة مطابقة): $name")
+                    0
+                }
+                is ImportResult.Failed -> 0
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "رفض الوصول لـ $name: ${e.message}")
+            return 0
+        } catch (e: IOException) {
+            Log.w(TAG, "تعذر قراءة $name: ${e.message}")
+            return 0
+        } finally {
+            runCatching { temp.delete() }
+        }
+    }
+
     private suspend fun importPdf(
         doc: DocumentFile,
         name: String,
@@ -249,6 +389,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         existingPaths: MutableSet<String>,
         done: MutableSet<String>,
         sourceApp: SourceApp,
+        dateOverride: Long? = null,
     ): Int {
         val temp = File(
             applicationContext.cacheDir,
@@ -281,7 +422,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                         repository = repository,
                         file = page.file,
                         identity = pageIdentity,
-                        originalDate = doc.lastModified(),
+                        originalDate = dateOverride ?: doc.lastModified(),
                         originalName = ImportRules.pageDisplayName(name, page.pageNumber),
                         ocrText = text,
                         existingPaths = existingPaths,
@@ -352,8 +493,10 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         existingPaths: MutableSet<String>,
         sourceApp: SourceApp,
         verified: ContentVerified = ContentVerified.ACCEPTED,
+        preferredBaseName: String? = null,
     ): ImportResult {
         val result = repository.importFile(
+            preferredBaseName = preferredBaseName,
             sourceFile = file,
             sourceApp = sourceApp,
             deleteSourceAfterImport = true,
@@ -620,6 +763,8 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         const val UNIQUE_WORK_NAME = "daily_archive_scan"
         const val ONE_TIME_WORK_NAME = "manual_archive_scan"
         private const val MAX_DEPTH = 4
+        private const val MAX_DAILY_SEARCH_DEPTH = 5
+        private const val MAX_DAILY_SEARCH_LISTINGS = 80
         private const val TAG = "FileScannerWorker"
         private val RUNNING = AtomicBoolean(false)
     }

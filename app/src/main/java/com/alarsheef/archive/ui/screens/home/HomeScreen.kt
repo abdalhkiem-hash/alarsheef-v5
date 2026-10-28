@@ -229,7 +229,7 @@ fun HomeScreen(
                 year != null -> repository.byYearForExport(year)
                 else -> repository.allForExport()
             }
-            shareUris(images.map { repository.getShareUri(it) }, "image/*")
+            shareUris(images.map { repository.getShareUri(it) }, com.alarsheef.archive.util.ShareMime.of(images))
         }
     }
 

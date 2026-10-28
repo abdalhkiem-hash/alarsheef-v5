@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.scanner.WorkScheduler
+import com.alarsheef.archive.scanner.ImportRules
 import com.alarsheef.archive.settings.SettingsPreferences
 import com.alarsheef.archive.ui.theme.GlassBorder
 import com.alarsheef.archive.ui.theme.GlassSoft
@@ -225,7 +226,8 @@ fun SettingsPanelContent(
         Spacer(Modifier.height(14.dp))
         SubHead("مجلد الإدخال")
         Text(
-            "اختياري. ضع فيه ملف اليوم إن لم يصل عبر واتساب أعمال. ما تاريخه قبل اليوم يُترك في المجلد.",
+            "اختياري. اختر مجلد أرشيف OneDrive (مثل «الارشيف»). يستورد التطبيق منه كل يوم ملف «${ImportRules.DAILY_FILE_NAME}» " +
+                "من مجلد تاريخ اليوم (مثل 27-10-2026) وحده، أينما كان تحت المجلد المختار.",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.75f),
         )
@@ -235,7 +237,7 @@ fun SettingsPanelContent(
             Modifier.padding(top = 8.dp)
         )
         if (importFolderUri != null) {
-            NoteSmall("المجلد الحالي: ${folderLabel(importFolderUri!!)}\nيُفحص هذا المجلد يوميًا، ويُؤرشف ملف اليوم فقط. الملف الناقص يُترك حتى يكتمل.")
+            NoteSmall("المجلد الحالي: ${folderLabel(importFolderUri!!)}\nيُفحص كل يوم: يُجرَّب مجلد يوم العمل (6ص ← 6ص) ثم تاريخ التقويم. إن لم يظهر المجلد أو الملف بعد، يُعاد الفحص لاحقًا.")
         } else {
             NoteSmall("بلا مجلد يبقى الفحص على واتساب أعمال فقط.")
         }

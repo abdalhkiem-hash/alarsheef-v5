@@ -27,6 +27,10 @@ import com.alarsheef.archive.ui.theme.GradientEnd
 import com.alarsheef.archive.ui.theme.TextMuted
 import com.alarsheef.archive.data.entities.ContentVerified
 import com.alarsheef.archive.util.ArchiveNaming
+import com.alarsheef.archive.util.PdfPages
+import com.alarsheef.archive.ui.components.PdfPagesColumn
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import android.widget.Toast
 import com.alarsheef.archive.ui.components.CountBadge
 import com.alarsheef.archive.ui.components.IconTile
 import androidx.compose.foundation.clickable
@@ -252,7 +256,7 @@ fun FilesScreen(
     fun shareScope() {
         scope.launch {
             val uris = images.mapNotNull { repository.getShareUri(it) }
-            if (uris.isNotEmpty()) shareUris(uris, "image/*")
+            if (uris.isNotEmpty()) shareUris(uris, com.alarsheef.archive.util.ShareMime.of(images))
         }
     }
 
@@ -404,7 +408,7 @@ fun FilesScreen(
                     TextButton(onClick = {
                         shareDialogOpen = false
                         val uris = selectedImages.map { repository.getShareUri(it) }
-                        shareUris(uris, "image/*")
+                        shareUris(uris, com.alarsheef.archive.util.ShareMime.of(selectedImages))
                     }) { Text("مشاركة كل ملف لحاله") }
                     TextButton(onClick = {
                         shareDialogOpen = false
@@ -431,7 +435,7 @@ fun FilesScreen(
             images = filtered,
             startIndex = idx,
             onClose = { viewerIndex = null },
-            onShare = { img -> shareUris(listOf(repository.getShareUri(img)), "image/*") }
+            onShare = { img -> shareUris(listOf(repository.getShareUri(img)), com.alarsheef.archive.util.ShareMime.of(listOf(img))) }
         )
     }
 
@@ -613,6 +617,7 @@ private fun ImageViewer(
 ) {
     val pagerState = rememberPagerState(initialPage = startIndex) { images.size }
     val viewerScope = rememberCoroutineScope()
+    val viewerContext = androidx.compose.ui.platform.LocalContext.current
     var renaming by remember { mutableStateOf<ArchivedImage?>(null) }
     // التكبير للصفحة الحالية فقط (يُصفَّر عند تغيير الصفحة) — مرفوع هنا ليتحكم به زرا + و−
     var zoom by remember { mutableStateOf(1f) }
@@ -652,6 +657,17 @@ private fun ImageViewer(
                         Icons.Filled.Info, "التفاصيل", { showInfo = !showInfo },
                         tint = if (showInfo) Accent else Color.White
                     )
+                    if (current != null && PdfPages.isPdf(current.storedPath)) {
+                        GlassIconButton(Icons.AutoMirrored.Filled.OpenInNew, "فتح بتطبيق PDF", {
+                            val uri = repository.getShareUri(current)
+                            val view = Intent(Intent.ACTION_VIEW)
+                                .setDataAndType(uri, "application/pdf")
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            runCatching { viewerContext.startActivity(view) }.onFailure {
+                                Toast.makeText(viewerContext, "لا يوجد تطبيق لفتح ملفات PDF", Toast.LENGTH_SHORT).show()
+                            }
+                        })
+                    }
                     GlassIconButton(Icons.Filled.Edit, "إعادة تسمية", { renaming = current })
                     GlassIconButton(Icons.Filled.Share, "مشاركة", { current?.let(onShare) })
                 }
@@ -716,19 +732,25 @@ private fun ImageViewer(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        AsyncImage(
-                            model = File(img.storedPath),
-                            contentDescription = img.fileName,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer(
-                                    scaleX = if (isCurrent) zoom else 1f,
-                                    scaleY = if (isCurrent) zoom else 1f,
-                                    translationX = if (isCurrent) offset.x else 0f,
-                                    translationY = if (isCurrent) offset.y else 0f
-                                )
-                        )
+                        val zoomLayer = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = if (isCurrent) zoom else 1f,
+                                scaleY = if (isCurrent) zoom else 1f,
+                                translationX = if (isCurrent) offset.x else 0f,
+                                translationY = if (isCurrent) offset.y else 0f
+                            )
+                        if (PdfPages.isPdf(img.storedPath)) {
+                            // ملف PDF يبقى PDF: صفحاته تُرسم عند العرض فقط
+                            PdfPagesColumn(File(img.storedPath), zoomLayer)
+                        } else {
+                            AsyncImage(
+                                model = File(img.storedPath),
+                                contentDescription = img.fileName,
+                                contentScale = ContentScale.Fit,
+                                modifier = zoomLayer
+                            )
+                        }
                     }
                 }
                 // سهما التنقّل: في RTL الصفحة السابقة يمينًا والتالية يسارًا

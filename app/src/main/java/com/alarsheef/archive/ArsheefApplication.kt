@@ -1,10 +1,13 @@
 package com.alarsheef.archive
 
 import android.app.Application
-import com.alarsheef.archive.data.repository.ArchiveRepository
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import com.alarsheef.archive.util.PdfFileMapper
+import com.alarsheef.archive.util.PdfPageFetcher
+import com.alarsheef.archive.util.PdfPageKeyer
 import com.alarsheef.archive.scanner.WorkScheduler
 import com.alarsheef.archive.settings.SettingsPreferences
-import com.alarsheef.archive.util.FileUtils
 import com.alarsheef.archive.work.AiAnalysisScheduler
 import com.alarsheef.archive.work.BackupScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -17,7 +20,16 @@ import kotlinx.coroutines.launch
  * وفق الإعدادات المحفوظة (WorkManager يحتفظ بالجدولة عبر إعادة التشغيل
  * أصلاً، لكن هذا يضمنها حتى لو تغيّرت بياناته الداخلية).
  */
-class ArsheefApplication : Application() {
+class ArsheefApplication : Application(), ImageLoaderFactory {
+
+    /** ملفات PDF المؤرشفة تظهر بصفحتها الأولى في كل مصغّر دون تحويلها إلى صور. */
+    override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
+        .components {
+            add(PdfFileMapper())
+            add(PdfPageKeyer())
+            add(PdfPageFetcher.Factory())
+        }
+        .build()
 
     override fun onCreate() {
         super.onCreate()
@@ -27,12 +39,6 @@ class ArsheefApplication : Application() {
             if (prefs.autoImport.first()) {
                 WorkScheduler.scheduleDailyScan(this@ArsheefApplication)
             }
-            // مجلد الإدخال أخذ ملفات أقدم من اليوم. تُزال عند الفتح، وأرشيف واتساب والمعرض يبقى.
-            if (!prefs.importFolderUri.first().isNullOrBlank()) {
-                ArchiveRepository(this@ArsheefApplication)
-                    .removeInboxCapturedBefore(FileUtils.startOfToday())
-            }
-
             if (prefs.backupEnabled.first()) {
                 val folderUri = prefs.backupFolderUri.first()
                 if (folderUri != null) {

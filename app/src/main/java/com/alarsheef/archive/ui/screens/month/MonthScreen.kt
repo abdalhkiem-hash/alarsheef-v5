@@ -206,7 +206,7 @@ fun MonthScreen(
                             onShare = {
                                 scope.launch {
                                     val images = repository.byMonthForExport(year, row.month)
-                                    shareUris(images.map { repository.getShareUri(it) }, "image/*")
+                                    shareUris(images.map { repository.getShareUri(it) }, com.alarsheef.archive.util.ShareMime.of(images))
                                 }
                             },
                             onLabel = { labelDialogScope = "m-$year-${row.month}" },

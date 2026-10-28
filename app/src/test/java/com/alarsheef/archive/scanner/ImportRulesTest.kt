@@ -10,6 +10,57 @@ import org.junit.Test
 /** قواعد قرار الاستيراد التلقائي — المصدر، الهوية، منع التكرار، نافذة الفحص. */
 class ImportRulesTest {
 
+    // ---------- مجلد الإدخال: ملف «اليوميه العامة» اليومي ----------
+
+    private fun millis(y: Int, m: Int, d: Int, h: Int): Long =
+        java.util.Calendar.getInstance().apply { clear(); set(y, m - 1, d, h, 30, 0) }.timeInMillis
+
+    @Test
+    fun dailyFolder_afterSixAm_isOneNameOnly() {
+        val c = ImportRules.dailyFolderCandidates(millis(2026, 10, 27, 14))
+        assertEquals(listOf("27-10-2026"), c.map { it.name })
+    }
+
+    @Test
+    fun dailyFolder_beforeSixAm_triesWorkDayThenCalendarDay() {
+        val c = ImportRules.dailyFolderCandidates(millis(2026, 10, 28, 2))
+        assertEquals(listOf("27-10-2026", "28-10-2026"), c.map { it.name })
+    }
+
+    @Test
+    fun dailyFolder_newYearBoundary() {
+        val c = ImportRules.dailyFolderCandidates(millis(2027, 1, 1, 3))
+        assertEquals(listOf("31-12-2026", "01-01-2027"), c.map { it.name })
+    }
+
+    @Test
+    fun dailyFolder_dateIsNoonOfFolderDay() {
+        val c = ImportRules.dailyFolderCandidates(millis(2026, 10, 27, 14)).single()
+        assertEquals(millis(2026, 10, 27, 12) - 30 * 60 * 1000L, c.noonMillis)
+    }
+
+    @Test
+    fun searchFolders_skipOtherYears_keepNeutralAndCurrent() {
+        assertTrue(ImportRules.shouldVisitDailySearchFolder("2026", 2026))
+        assertTrue(ImportRules.shouldVisitDailySearchFolder("اكتوبر 2026", 2026))
+        assertTrue(ImportRules.shouldVisitDailySearchFolder("الارشيف", 2026))
+        assertFalse(ImportRules.shouldVisitDailySearchFolder("2025", 2026))
+        assertFalse(ImportRules.shouldVisitDailySearchFolder("ابريل 2024", 2026))
+        // السنة الجديدة: 2027 يُفتح و2026 يُترك دون تعديل كود
+        assertTrue(ImportRules.shouldVisitDailySearchFolder("2027", 2027))
+        assertFalse(ImportRules.shouldVisitDailySearchFolder("2026", 2027))
+    }
+
+    @Test
+    fun dailyFileName_matchesVariantsOnly() {
+        assertTrue(ImportRules.isDailyFileName("اليوميه العامة"))
+        assertTrue(ImportRules.isDailyFileName("اليوميه العامة.pdf"))
+        assertTrue(ImportRules.isDailyFileName("اليومية العامه.PDF"))
+        assertFalse(ImportRules.isDailyFileName("القيود اليوميه.pdf"))
+        assertFalse(ImportRules.isDailyFileName("حركة الصندوق.pdf"))
+        assertFalse(ImportRules.isDailyFileName("ارصدة العملاء اجمالي.pdf"))
+    }
+
     // ---------- تحديد المصدر من المسار ----------
 
     @Test

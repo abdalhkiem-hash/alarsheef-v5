@@ -387,7 +387,9 @@ class ArchiveRepository(context: Context, database: AppDatabase? = null) {
             val (year, month, day) = FileUtils.dayParts(dateMillis)
             val targetDir = FileUtils.dayFolder(rootDir, year, month, day)
             // الضغط بعد حساب البصمة على الأصل. null = تُحفظ الصورة كما هي.
-            compressed = ImageCompressor.compress(context, sourceFile)
+            // PDF يُحفظ كما هو بلا أي معالجة صورة
+            compressed = if (sourceFile.extension.equals("pdf", ignoreCase = true)) null
+            else ImageCompressor.compress(context, sourceFile)
             val ext = compressed?.extension ?: sourceFile.extension.ifBlank { "jpg" }
             val chosenName = preferredBaseName
                 ?.let { com.alarsheef.archive.util.ArchiveNaming.sanitize(it) }

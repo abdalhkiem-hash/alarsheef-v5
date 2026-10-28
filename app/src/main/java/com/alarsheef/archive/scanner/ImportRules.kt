@@ -3,6 +3,7 @@ package com.alarsheef.archive.scanner
 import com.alarsheef.archive.data.entities.SourceApp
 import com.alarsheef.archive.util.FileUtils
 import java.net.URLDecoder
+import java.util.Calendar
 import java.util.Locale
 
 /**
@@ -151,6 +152,57 @@ object ImportRules {
      */
     fun isBeforeToday(lastModifiedMillis: Long, startOfTodayMillis: Long): Boolean =
         lastModifiedMillis > 0L && lastModifiedMillis < startOfTodayMillis
+
+    // ---------- مجلد الإدخال: ملف يومي واحد من أرشيف OneDrive ----------
+
+    /** الملف المطلوب من مجلد كل يوم (يُطابَق بعد توحيد الحروف، فلا يضرّ ة/ه أو الامتداد). */
+    const val DAILY_FILE_NAME = "اليوميه العامة"
+
+    /** مجلد يوم باسمه `dd-MM-yyyy`، ومنتصف نهاره تاريخًا للأرشفة حتى لا يتأثر بوقت رفع الملف. */
+    data class DailyFolder(val name: String, val noonMillis: Long)
+
+    private val YEAR_IN_NAME = Regex("(?<!\\d)(20\\d{2})(?!\\d)")
+    private val ARABIC_MARKS = Regex("[\\u064B-\\u065F\\u0670\\u0640]")
+
+    /**
+     * أسماء مجلد اليوم بترتيب الأولوية: يوم عمل التطبيق (6ص ← 6ص) أولًا، ثم تاريخ التقويم
+     * إن اختلف عنه (قبل الساعة 6 صباحًا).
+     */
+    fun dailyFolderCandidates(nowMillis: Long): List<DailyFolder> {
+        val workDay = FileUtils.dayParts(nowMillis)
+        val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }.let {
+            Triple(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, it.get(Calendar.DAY_OF_MONTH))
+        }
+        return listOf(workDay, calendar).distinct().map { (y, m, d) ->
+            val noon = Calendar.getInstance().apply {
+                clear()
+                set(y, m - 1, d, 12, 0, 0)
+            }.timeInMillis
+            DailyFolder(String.format(Locale.ROOT, "%02d-%02d-%04d", d, m, y), noon)
+        }
+    }
+
+    /**
+     * هل يُفتح هذا المجلد أثناء البحث عن مجلد اليوم؟ مجلد اسمه يحمل سنة غير سنة اليوم
+     * (مثل 2024 أو «اكتوبر 2025») يُترك، فلا يلزم تغيير المسار في السنة الجديدة.
+     */
+    fun shouldVisitDailySearchFolder(name: String, year: Int): Boolean {
+        val years = YEAR_IN_NAME.findAll(name).map { it.groupValues[1].toInt() }.toList()
+        return years.isEmpty() || year in years
+    }
+
+    /** توحيد الاسم العربي: بلا امتداد ولا تشكيل، ة=ه ى=ي وألفات موحّدة ومسافات مفردة. */
+    fun normalizeArabicName(name: String): String =
+        name.substringBeforeLast('.', name)
+            .replace(ARABIC_MARKS, "")
+            .replace('ة', 'ه').replace('ى', 'ي')
+            .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
+            .lowercase(Locale.ROOT)
+            .replace(Regex("[\\s_]+"), " ")
+            .trim()
+
+    fun isDailyFileName(name: String): Boolean =
+        normalizeArabicName(name).contains(normalizeArabicName(DAILY_FILE_NAME))
 
     /**
      * يجهّز بوابة المسارات السريعة من المسارات المخزَّنة:
