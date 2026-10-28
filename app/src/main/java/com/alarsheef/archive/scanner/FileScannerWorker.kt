@@ -79,6 +79,13 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
             val existingPaths = ImportRules.normalizeExistingPaths(repository.findAllOriginalPaths())
             val done = repository.processedSourcePaths().toMutableSet()
             var count = scanWhatsappBusiness(repository, existingPaths, done)
+            // ملف اليومية أولًا: فحصه سريع (مجلد واحد)، أما مجلد مستندات واتساب فيمرّ على آلاف
+            // الملفات القديمة في كل دورة وقد يستغرق دقائق.
+            if (OneDriveAuth.isSignedIn(applicationContext)) {
+                count += scanOneDriveJournal(prefs.oneDrivePath.first(), repository, existingPaths, done)
+            } else if (folderUri != null) {
+                count += scanDailyJournal(Uri.parse(folderUri), repository, existingPaths, done)
+            }
             // المستندات قبل مجلد الصور: ملف PDF الذي وصل اليوم لا ينتظر عشرات آلاف الصور القديمة.
             if (businessDocsUri != null) {
                 count += scanInbox(
@@ -88,11 +95,6 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     done,
                     SourceApp.WHATSAPP_BUSINESS,
                 )
-            }
-            if (OneDriveAuth.isSignedIn(applicationContext)) {
-                count += scanOneDriveJournal(prefs.oneDrivePath.first(), repository, existingPaths, done)
-            } else if (folderUri != null) {
-                count += scanDailyJournal(Uri.parse(folderUri), repository, existingPaths, done)
             }
             prefs.setLastScanAt(System.currentTimeMillis())
             if (count > 0) {
@@ -146,6 +148,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
             Log.i(TAG, "لا مجلد لليوم بعد (${candidates.joinToString { it.name }})")
             return 0
         }
+        var imported = 0
         for ((folder, day) in folders) {
             currentCoroutineContext().ensureActive()
             val doc = folder.listFiles().firstOrNull { f ->
@@ -157,9 +160,9 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
             } ?: continue
             val name = doc.name.orEmpty()
             val identity = doc.uri.toString()
-            if (identity in done) return 0
+            if (identity in done || identity in existingPaths) continue
             val kind = ImportRules.inboxFileKind(name, doc.length().takeIf { it > 0L } ?: 1L)
-            return when (kind) {
+            imported += when (kind) {
                 ImportRules.InboxFileKind.PDF ->
                     importPdfAsIs(
                         { copyTo(doc, it) != null }, doc.lastModified(),
@@ -170,8 +173,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                 else -> 0
             }
         }
-        Log.i(TAG, "لا «${ImportRules.DAILY_FILE_NAME}» في مجلد اليوم بعد")
-        return 0
+        return imported
     }
 
     /**
@@ -185,27 +187,39 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         done: MutableSet<String>,
     ): Int {
         val client = OneDriveClient { OneDriveAuth.accessToken(applicationContext) }
+        var imported = 0
         try {
             for (day in ImportRules.dailyFolderCandidates(System.currentTimeMillis())) {
                 currentCoroutineContext().ensureActive()
                 val year = day.name.takeLast(4).toInt()
                 val base = pathTemplate.replace("{year}", year.toString())
-                val folder = client.findFolder(base, day.name, year) ?: continue
+                val folder = client.findFolder(base, day.name, year)
+                if (folder == null) {
+                    Log.i(TAG, "OneDrive: لا مجلد ${day.name} بعد تحت $base")
+                    continue
+                }
                 val file = client.children(folder.id).firstOrNull {
                     !it.isFolder && ImportRules.isDailyFileName(it.name) && FileUtils.isPdf(it.name)
-                } ?: continue
+                }
+                if (file == null) {
+                    Log.i(TAG, "OneDrive: «${ImportRules.DAILY_FILE_NAME}» غير موجود في ${day.name} بعد")
+                    continue
+                }
+                Log.i(TAG, "OneDrive: وُجد الملف ${file.name} في ${day.name}")
                 val identity = "onedrive:${file.id}"
-                if (identity in done || identity in existingPaths) return 0
-                return importPdfAsIs(
+                if (identity in done || identity in existingPaths) {
+                    Log.i(TAG, "OneDrive: ${file.name} في ${day.name} مستورد من قبل")
+                    continue
+                }
+                imported += importPdfAsIs(
                     { client.downloadTo(file.id, it) }, day.noonMillis,
                     file.name, identity, repository, existingPaths, done, SourceApp.INBOX, day.noonMillis,
                 )
             }
-            Log.i(TAG, "OneDrive: لا «${ImportRules.DAILY_FILE_NAME}» لليوم بعد")
         } catch (e: IOException) {
             Log.w(TAG, "OneDrive: تعذّر القراءة الآن (${e.message}) — يُعاد لاحقًا")
         }
-        return 0
+        return imported
     }
 
     /**
@@ -380,7 +394,10 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
     ): Int {
         val temp = File(applicationContext.cacheDir, ImportRules.tempFileName("pdf", name, System.nanoTime()))
         try {
-            if (!fetch(temp)) return 0
+            if (!fetch(temp)) {
+                Log.w(TAG, "تعذّر جلب الملف $name")
+                return 0
+            }
             if (temp.length() == 0L) {
                 Log.i(TAG, "يُترك حتى يكتمل: $name")
                 return 0

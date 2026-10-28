@@ -1,6 +1,7 @@
 package com.alarsheef.archive.onedrive
 
 import android.net.Uri
+import android.util.Log
 import com.alarsheef.archive.scanner.ImportRules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,10 +29,11 @@ class OneDriveClient(private val token: suspend () -> String?) {
 
     /** ينزّل الملف إلى [target]. يعيد false إن لم يتوفر رابط التنزيل. */
     suspend fun downloadTo(itemId: String, target: File): Boolean = withContext(Dispatchers.IO) {
-        val meta = getJson("$GRAPH/me/drive/items/${Uri.encode(itemId)}?\$select=id,@microsoft.graph.downloadUrl")
-            ?: return@withContext false
-        val url = meta.optString("@microsoft.graph.downloadUrl").takeIf { it.isNotBlank() }
-            ?: return@withContext false
+        val url = downloadUrlOf(itemId)
+        if (url == null) {
+            Log.w(TAG, "لا رابط تنزيل للملف $itemId")
+            return@withContext false
+        }
         // رابط التنزيل موقَّع مسبقًا: لا يُرسَل إليه رمز الدخول
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
@@ -40,6 +42,33 @@ class OneDriveClient(private val token: suspend () -> String?) {
             if (conn.responseCode !in 200..299) throw IOException("HTTP ${conn.responseCode}")
             target.outputStream().use { out -> conn.inputStream.use { it.copyTo(out) } }
             true
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /**
+     * رابط التنزيل الموقَّع: من خاصية الملف إن وُجدت، وإلا من إعادة التوجيه الرسمية لـ `/content`
+     * (Graph يردّ 302 إلى رابط مؤقت). الرابط الموقَّع لا يحتاج رمز دخول.
+     */
+    private suspend fun downloadUrlOf(itemId: String): String? {
+        val id = Uri.encode(itemId)
+        runCatching { getJson("$GRAPH/me/drive/items/$id?\$select=id,@microsoft.graph.downloadUrl") }
+            .getOrNull()?.optString("@microsoft.graph.downloadUrl")?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+        val bearer = token() ?: throw IOException("OneDrive غير مربوط")
+        val conn = URL("$GRAPH/me/drive/items/$id/content").openConnection() as HttpURLConnection
+        return try {
+            conn.instanceFollowRedirects = false
+            conn.setRequestProperty("Authorization", "Bearer $bearer")
+            conn.connectTimeout = 20_000
+            conn.readTimeout = 30_000
+            val code = conn.responseCode
+            if (code in 300..399) conn.getHeaderField("Location")
+            else {
+                Log.w(TAG, "تنزيل /content: HTTP $code بلا إعادة توجيه")
+                null
+            }
         } finally {
             conn.disconnect()
         }
@@ -55,11 +84,17 @@ class OneDriveClient(private val token: suspend () -> String?) {
         var depth = 0
         while (level.isNotEmpty() && depth <= MAX_DEPTH) {
             val folders = level.filter { it.isFolder }
-            folders.firstOrNull { it.name == folderName }?.let { return it }
+            folders.firstOrNull { it.name == folderName }?.let {
+                Log.i(TAG, "وُجد $folderName بعد $listings قائمة (عمق $depth)")
+                return it
+            }
             val next = ArrayList<Item>()
             for (folder in folders) {
                 if (!ImportRules.shouldVisitDailySearchFolder(folder.name, year)) continue
-                if (listings >= MAX_LISTINGS) return null
+                if (listings >= MAX_LISTINGS) {
+                    Log.i(TAG, "توقف البحث عن $folderName عند سقف القوائم")
+                    return null
+                }
                 listings++
                 next.addAll(children(folder.id))
             }
@@ -105,6 +140,7 @@ class OneDriveClient(private val token: suspend () -> String?) {
 
     private companion object {
         const val GRAPH = "https://graph.microsoft.com/v1.0"
+        const val TAG = "OneDriveClient"
         const val MAX_DEPTH = 4
         const val MAX_LISTINGS = 40
     }

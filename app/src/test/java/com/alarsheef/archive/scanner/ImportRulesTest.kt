@@ -16,26 +16,26 @@ class ImportRulesTest {
         java.util.Calendar.getInstance().apply { clear(); set(y, m - 1, d, h, 30, 0) }.timeInMillis
 
     @Test
-    fun dailyFolder_afterSixAm_isOneNameOnly() {
+    fun dailyFolder_afterSixAm_isWorkDayThenPreviousDay() {
         val c = ImportRules.dailyFolderCandidates(millis(2026, 10, 27, 14))
-        assertEquals(listOf("27-10-2026"), c.map { it.name })
+        assertEquals(listOf("27-10-2026", "26-10-2026"), c.map { it.name })
     }
 
     @Test
     fun dailyFolder_beforeSixAm_triesWorkDayThenCalendarDay() {
         val c = ImportRules.dailyFolderCandidates(millis(2026, 10, 28, 2))
-        assertEquals(listOf("27-10-2026", "28-10-2026"), c.map { it.name })
+        assertEquals(listOf("27-10-2026", "28-10-2026", "26-10-2026"), c.map { it.name })
     }
 
     @Test
     fun dailyFolder_newYearBoundary() {
         val c = ImportRules.dailyFolderCandidates(millis(2027, 1, 1, 3))
-        assertEquals(listOf("31-12-2026", "01-01-2027"), c.map { it.name })
+        assertEquals(listOf("31-12-2026", "01-01-2027", "30-12-2026"), c.map { it.name })
     }
 
     @Test
     fun dailyFolder_dateIsNoonOfFolderDay() {
-        val c = ImportRules.dailyFolderCandidates(millis(2026, 10, 27, 14)).single()
+        val c = ImportRules.dailyFolderCandidates(millis(2026, 10, 27, 14)).first()
         assertEquals(millis(2026, 10, 27, 12) - 30 * 60 * 1000L, c.noonMillis)
     }
 

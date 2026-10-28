@@ -166,14 +166,21 @@ object ImportRules {
 
     /**
      * أسماء مجلد اليوم بترتيب الأولوية: يوم عمل التطبيق (6ص ← 6ص) أولًا، ثم تاريخ التقويم
-     * إن اختلف عنه (قبل الساعة 6 صباحًا).
+     * إن اختلف عنه (قبل الساعة 6 صباحًا)، ثم يوم العمل السابق.
      */
     fun dailyFolderCandidates(nowMillis: Long): List<DailyFolder> {
         val workDay = FileUtils.dayParts(nowMillis)
         val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }.let {
             Triple(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, it.get(Calendar.DAY_OF_MONTH))
         }
-        return listOf(workDay, calendar).distinct().map { (y, m, d) ->
+        // مجلد اليوم يُنشأ غالبًا فجرًا (قبل 6ص) باسم يوم العمل السابق، فيبقى يوم العمل السابق
+        // مرشَّحًا ثالثًا: لا يفوت الملف إن مرّ الفحص بعد السادسة. الملف المستورد لا يُعاد.
+        val previous = Calendar.getInstance().apply {
+            clear()
+            set(workDay.first, workDay.second - 1, workDay.third)
+            add(Calendar.DAY_OF_MONTH, -1)
+        }.let { Triple(it.get(Calendar.YEAR), it.get(Calendar.MONTH) + 1, it.get(Calendar.DAY_OF_MONTH)) }
+        return listOf(workDay, calendar, previous).distinct().map { (y, m, d) ->
             val noon = Calendar.getInstance().apply {
                 clear()
                 set(y, m - 1, d, 12, 0, 0)

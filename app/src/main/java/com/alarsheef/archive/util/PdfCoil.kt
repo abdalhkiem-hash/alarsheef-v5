@@ -21,8 +21,11 @@ class PdfFileMapper : Mapper<File, PdfPage> {
 }
 
 class PdfPageKeyer : Keyer<PdfPage> {
-    override fun key(data: PdfPage, options: Options): String =
-        "pdf:${data.file.path}:${data.file.lastModified()}:${data.index}"
+    // الحجم المطلوب جزء من المفتاح: مصغّر صغير في الذاكرة لا يُعاد استخدامه في العارض الكبير
+    override fun key(data: PdfPage, options: Options): String {
+        val width = (options.size.width as? Dimension.Pixels)?.px ?: 0
+        return "pdf:${data.file.path}:${data.file.lastModified()}:${data.index}:$width"
+    }
 }
 
 class PdfPageFetcher(
