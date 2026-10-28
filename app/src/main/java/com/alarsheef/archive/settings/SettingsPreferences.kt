@@ -23,6 +23,7 @@ class SettingsPreferences(private val context: Context) {
         val SOURCE_GALLERY = booleanPreferencesKey("source_gallery")
         val SOURCE_DOWNLOADS = booleanPreferencesKey("source_downloads")
         val IMPORT_FOLDER_URI = stringPreferencesKey("import_folder_uri")
+        val ONEDRIVE_PATH = stringPreferencesKey("onedrive_path")
         val BACKUP_ENABLED = booleanPreferencesKey("backup_enabled")
         val BACKUP_FREQUENCY = stringPreferencesKey("backup_frequency")
         val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
@@ -60,6 +61,8 @@ class SettingsPreferences(private val context: Context) {
     val sourceGallery: Flow<Boolean> = context.appDataStore.data.map { it[Keys.SOURCE_GALLERY] ?: true }
     val sourceDownloads: Flow<Boolean> = context.appDataStore.data.map { it[Keys.SOURCE_DOWNLOADS] ?: true }
     val importFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.IMPORT_FOLDER_URI] }
+    /** مسار أرشيف OneDrive؛ {year} يُستبدل بسنة اليوم فلا يلزم تعديله كل سنة. */
+    val oneDrivePath: Flow<String> = context.appDataStore.data.map { it[Keys.ONEDRIVE_PATH] ?: com.alarsheef.archive.onedrive.OneDriveProtocol.DEFAULT_PATH }
     val importAutoCrop: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_CROP] ?: true }
     val importAutoEnhance: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_ENHANCE] ?: true }
     val backupEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.BACKUP_ENABLED] ?: false }
@@ -94,6 +97,7 @@ class SettingsPreferences(private val context: Context) {
     suspend fun setSourceWhatsappBusiness(v: Boolean) { context.appDataStore.edit { it[Keys.SOURCE_WHATSAPP_BUSINESS] = v } }
     suspend fun setSourceGallery(v: Boolean) { context.appDataStore.edit { it[Keys.SOURCE_GALLERY] = v } }
     suspend fun setSourceDownloads(v: Boolean) { context.appDataStore.edit { it[Keys.SOURCE_DOWNLOADS] = v } }
+    suspend fun setOneDrivePath(v: String) { context.appDataStore.edit { it[Keys.ONEDRIVE_PATH] = v.trim() } }
     suspend fun setImportFolderUri(v: String?) {
         context.appDataStore.edit { if (v == null) it.remove(Keys.IMPORT_FOLDER_URI) else it[Keys.IMPORT_FOLDER_URI] = v }
     }

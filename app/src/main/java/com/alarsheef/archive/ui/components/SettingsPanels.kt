@@ -37,7 +37,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.alarsheef.archive.data.repository.ArchiveRepository
 import com.alarsheef.archive.scanner.WorkScheduler
+import android.widget.Toast
 import com.alarsheef.archive.scanner.ImportRules
+import com.alarsheef.archive.onedrive.OneDriveAuth
+import com.alarsheef.archive.onedrive.OneDriveProtocol
 import com.alarsheef.archive.settings.SettingsPreferences
 import com.alarsheef.archive.ui.theme.GlassBorder
 import com.alarsheef.archive.ui.theme.GlassSoft
@@ -178,6 +181,9 @@ fun SettingsPanelContent(
     val importFolderUri by prefs.importFolderUri.collectAsStateWithLifecycle(initialValue = null)
     val businessDocsUri by prefs.whatsappBusinessDocumentsTreeUri.collectAsStateWithLifecycle(initialValue = null)
     val documentTypes by repository.observeDocumentTypes().collectAsStateWithLifecycle(initialValue = emptyList())
+    val oneDriveAccount by OneDriveAuth.account.collectAsStateWithLifecycle()
+    val oneDrivePath by prefs.oneDrivePath.collectAsStateWithLifecycle(initialValue = OneDriveProtocol.DEFAULT_PATH)
+    var oneDrivePathDraft by remember { mutableStateOf<String?>(null) }
     var typeName by remember { mutableStateOf("") }
     var typeKeywords by remember { mutableStateOf("") }
     var typeMessage by remember { mutableStateOf<String?>(null) }
@@ -224,13 +230,45 @@ fun SettingsPanelContent(
             }
         )
         Spacer(Modifier.height(14.dp))
-        SubHead("مجلد الإدخال")
+        SubHead("ملف اليومية من OneDrive")
         Text(
-            "اختياري. اختر مجلد أرشيف OneDrive (مثل «الارشيف»). يستورد التطبيق منه كل يوم ملف «${ImportRules.DAILY_FILE_NAME}» " +
-                "من مجلد تاريخ اليوم (مثل 27-10-2026) وحده، أينما كان تحت المجلد المختار.",
+            "اربط حساب OneDrive مرة واحدة. يستورد التطبيق منه كل يوم ملف «${ImportRules.DAILY_FILE_NAME}» " +
+                "من مجلد تاريخ اليوم (بصيغة يوم-شهر-سنة) وحده، ويبقيه PDF كما هو. القراءة فقط ولا يُعدَّل شيء في حسابك.",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.75f),
         )
+        if (oneDriveAccount == null) {
+            BtnFull(
+                "ربط حساب OneDrive",
+                onClick = {
+                    if (!OneDriveAuth.startSignIn(context)) {
+                        Toast.makeText(context, "لا يوجد متصفح لإكمال تسجيل الدخول", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        } else {
+            NoteSmall("مرتبط بالحساب: $oneDriveAccount", Modifier.padding(top = 8.dp))
+            OutlinedTextField(
+                value = oneDrivePathDraft ?: oneDrivePath,
+                onValueChange = {
+                    oneDrivePathDraft = it
+                    scope.launch { prefs.setOneDrivePath(it) }
+                },
+                label = { Text("مسار الأرشيف في OneDrive") },
+                singleLine = true,
+                colors = fieldColors,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            )
+            NoteSmall("{year} تُستبدل بسنة اليوم تلقائيًا، فيبقى المسار صالحًا في السنة الجديدة (مثال: 2027/الارشيف).")
+            BtnOutline(
+                "فصل الحساب",
+                onClick = { OneDriveAuth.signOut(context) },
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        SubHead("مجلد محلي على الهاتف (بديل)")
         BtnOutline(
             if (importFolderUri != null) "تغيير مجلد الإدخال" else "اختيار مجلد الإدخال",
             onPickImportFolder,

@@ -33,6 +33,7 @@ class ArsheefApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        com.alarsheef.archive.onedrive.OneDriveAuth.restore(this)
         CoroutineScope(Dispatchers.IO).launch {
             val prefs = SettingsPreferences(this@ArsheefApplication)
 

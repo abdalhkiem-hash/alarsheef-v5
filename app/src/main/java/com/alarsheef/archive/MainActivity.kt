@@ -1,6 +1,12 @@
 package com.alarsheef.archive
 
+import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
+import com.alarsheef.archive.onedrive.OneDriveAuth
+import com.alarsheef.archive.scanner.WorkScheduler
+import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -41,9 +47,30 @@ import com.alarsheef.archive.ui.theme.GradientStart
 
 class MainActivity : ComponentActivity() {
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleOneDriveRedirect(intent)
+    }
+
+    /** عودة المتصفح بعد تسجيل دخول Microsoft: يُكمل الربط ثم يفحص الملف اليومي فورًا. */
+    private fun handleOneDriveRedirect(intent: Intent?) {
+        val uri = intent?.data?.takeIf { OneDriveAuth.isRedirect(it) } ?: return
+        intent.data = null
+        lifecycleScope.launch {
+            val error = OneDriveAuth.completeSignIn(applicationContext, uri)
+            Toast.makeText(
+                applicationContext,
+                error ?: "تم ربط OneDrive",
+                Toast.LENGTH_LONG
+            ).show()
+            if (error == null) WorkScheduler.runOnce(applicationContext)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleOneDriveRedirect(intent)
 
         val repository = ArchiveRepository(applicationContext)
 

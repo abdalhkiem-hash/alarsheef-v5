@@ -7,6 +7,8 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.alarsheef.archive.onedrive.OneDriveAuth
+import com.alarsheef.archive.onedrive.OneDriveClient
 import com.alarsheef.archive.util.PermissionUtils
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -87,7 +89,9 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     SourceApp.WHATSAPP_BUSINESS,
                 )
             }
-            if (folderUri != null) {
+            if (OneDriveAuth.isSignedIn(applicationContext)) {
+                count += scanOneDriveJournal(prefs.oneDrivePath.first(), repository, existingPaths, done)
+            } else if (folderUri != null) {
                 count += scanDailyJournal(Uri.parse(folderUri), repository, existingPaths, done)
             }
             prefs.setLastScanAt(System.currentTimeMillis())
@@ -157,13 +161,50 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
             val kind = ImportRules.inboxFileKind(name, doc.length().takeIf { it > 0L } ?: 1L)
             return when (kind) {
                 ImportRules.InboxFileKind.PDF ->
-                    importPdfAsIs(doc, name, identity, repository, existingPaths, done, SourceApp.INBOX, day.noonMillis)
+                    importPdfAsIs(
+                        { copyTo(doc, it) != null }, doc.lastModified(),
+                        name, identity, repository, existingPaths, done, SourceApp.INBOX, day.noonMillis,
+                    )
                 ImportRules.InboxFileKind.IMAGE ->
                     importImage(doc, name, identity, repository, existingPaths, done, SourceApp.INBOX, day.noonMillis)
                 else -> 0
             }
         }
         Log.i(TAG, "لا «${ImportRules.DAILY_FILE_NAME}» في مجلد اليوم بعد")
+        return 0
+    }
+
+    /**
+     * الحساب مربوط بـ OneDrive: يبحث عن مجلد اليوم تحت [pathTemplate] (و{year} سنة المجلد)
+     * ويستورد «اليوميه العامة» مرة واحدة. فشل الشبكة لا يوقف بقية الفحص، ويُعاد في الدورة التالية.
+     */
+    private suspend fun scanOneDriveJournal(
+        pathTemplate: String,
+        repository: ArchiveRepository,
+        existingPaths: MutableSet<String>,
+        done: MutableSet<String>,
+    ): Int {
+        val client = OneDriveClient { OneDriveAuth.accessToken(applicationContext) }
+        try {
+            for (day in ImportRules.dailyFolderCandidates(System.currentTimeMillis())) {
+                currentCoroutineContext().ensureActive()
+                val year = day.name.takeLast(4).toInt()
+                val base = pathTemplate.replace("{year}", year.toString())
+                val folder = client.findFolder(base, day.name, year) ?: continue
+                val file = client.children(folder.id).firstOrNull {
+                    !it.isFolder && ImportRules.isDailyFileName(it.name) && FileUtils.isPdf(it.name)
+                } ?: continue
+                val identity = "onedrive:${file.id}"
+                if (identity in done || identity in existingPaths) return 0
+                return importPdfAsIs(
+                    { client.downloadTo(file.id, it) }, day.noonMillis,
+                    file.name, identity, repository, existingPaths, done, SourceApp.INBOX, day.noonMillis,
+                )
+            }
+            Log.i(TAG, "OneDrive: لا «${ImportRules.DAILY_FILE_NAME}» لليوم بعد")
+        } catch (e: IOException) {
+            Log.w(TAG, "OneDrive: تعذّر القراءة الآن (${e.message}) — يُعاد لاحقًا")
+        }
         return 0
     }
 
@@ -327,7 +368,8 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
      * يُعرض بصفحاته عند الفتح. لا OCR ولا تحليل ذكي له؛ اسمه المرجع الوحيد.
      */
     private suspend fun importPdfAsIs(
-        doc: DocumentFile,
+        fetch: suspend (File) -> Boolean,
+        fallbackDate: Long,
         name: String,
         identity: String,
         repository: ArchiveRepository,
@@ -338,7 +380,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
     ): Int {
         val temp = File(applicationContext.cacheDir, ImportRules.tempFileName("pdf", name, System.nanoTime()))
         try {
-            copyTo(doc, temp) ?: return 0
+            if (!fetch(temp)) return 0
             if (temp.length() == 0L) {
                 Log.i(TAG, "يُترك حتى يكتمل: $name")
                 return 0
@@ -348,7 +390,7 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
                     repository = repository,
                     file = temp,
                     identity = identity,
-                    originalDate = dateOverride ?: doc.lastModified(),
+                    originalDate = dateOverride ?: fallbackDate,
                     originalName = name,
                     ocrText = null,
                     existingPaths = existingPaths,
