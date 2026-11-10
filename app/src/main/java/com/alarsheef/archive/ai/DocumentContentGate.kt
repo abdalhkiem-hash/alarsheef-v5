@@ -14,7 +14,11 @@ sealed class ContentVerdict {
     data class Ambiguous(val partialMatches: List<String>) : ContentVerdict()
 
     /** نص مقروء لكن بلا أدلة مستندية — لا تُؤرشف. */
-    data class Rejected(val reason: String) : ContentVerdict()
+    /**
+     * [clear] = نص طويل قُرئ ولا فيه أي مرساة ولا كلمة مالية ولا مبلغ ولا مرجع (بطاقة تهنئة،
+     * إعلان، منشور). يُرفض الملف نهائيًا بدل إرساله للمراجعة.
+     */
+    data class Rejected(val reason: String, val clear: Boolean = false) : ContentVerdict()
 }
 
 /** فئات المستندات المستهدفة (فواتير، حوالات/إيصالات، حركة صندوق، وثائق). */
@@ -146,6 +150,9 @@ object DocumentContentGate {
     private val LONG_NUMBER = Regex("(?<!\\d)\\d{8,}(?!\\d)")
     private val LABELED_REF = Regex("(?:رقم|no|ref|reference|مرجع|عمليه)\\s*[:#\\-]?\\s*\\d{4,}")
 
+    /** أقل عدد كلمات مقروءة ليُعدّ غياب الدلائل رفضًا قاطعًا. */
+    internal const val CLEAR_REJECT_MIN_TOKENS = 25
+
     // ---------- الحكم ----------
 
     fun verify(ocrText: String): ContentVerdict {
@@ -191,7 +198,10 @@ object DocumentContentGate {
         return if (ambiguous) {
             ContentVerdict.Ambiguous(evidence)
         } else {
-            ContentVerdict.Rejected("لا دلائل مالية/مستندية كافية")
+            ContentVerdict.Rejected(
+                "لا دلائل مالية/مستندية كافية",
+                clear = a == 0 && s == 0 && numeric == 0 && tokenCount >= CLEAR_REJECT_MIN_TOKENS
+            )
         }
     }
 

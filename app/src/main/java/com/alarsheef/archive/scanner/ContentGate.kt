@@ -33,7 +33,7 @@ object ContentGate {
         data class Accepted(val category: DocumentCategory, val label: String, val text: String) : Outcome()
         /** نص فيه دليل جزئي لا يكفي للحسم. */
         data class Ambiguous(val text: String) : Outcome()
-        data class Rejected(val reason: String) : Outcome()
+        data class Rejected(val reason: String, val clear: Boolean = false) : Outcome()
 
         /** OCR قرأ كل الصفحات المفحوصة وأكّد أن لا نص فيها إطلاقًا. */
         data object NoText : Outcome()
@@ -76,7 +76,7 @@ object ContentGate {
                 joined
             )
             is ContentVerdict.Ambiguous -> Outcome.Ambiguous(joined)
-            is ContentVerdict.Rejected -> Outcome.Rejected(verdict.reason)
+            is ContentVerdict.Rejected -> Outcome.Rejected(verdict.reason, verdict.clear)
         }
     }
 

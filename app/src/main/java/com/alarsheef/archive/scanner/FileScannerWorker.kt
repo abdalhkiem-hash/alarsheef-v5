@@ -528,7 +528,8 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         val (evidence, text) = when (outcome) {
             is ContentGate.Outcome.Accepted -> ImportGate.TextEvidence.ACCEPTED to outcome.text
             is ContentGate.Outcome.Ambiguous -> ImportGate.TextEvidence.PARTIAL to outcome.text
-            is ContentGate.Outcome.Rejected -> ImportGate.TextEvidence.REJECTED to null
+            is ContentGate.Outcome.Rejected ->
+                (if (outcome.clear) ImportGate.TextEvidence.REJECTED_CLEAR else ImportGate.TextEvidence.REJECTED) to null
             ContentGate.Outcome.NoText -> ImportGate.TextEvidence.NO_TEXT to null
             ContentGate.Outcome.Unavailable -> ImportGate.TextEvidence.UNREADABLE to null
         }

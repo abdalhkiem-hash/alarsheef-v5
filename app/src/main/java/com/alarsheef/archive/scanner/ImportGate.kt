@@ -60,6 +60,8 @@ object ImportGate {
         ACCEPTED,
         /** نص مقروء بلا أي دلائل مستندية. */
         REJECTED,
+        /** نص طويل بلا أي دلائل (مرساة أو كلمة مالية أو مبلغ أو مرجع): ليس مستندًا، يُرفض نهائيًا. */
+        REJECTED_CLEAR,
     }
 
     /**
@@ -114,6 +116,8 @@ object ImportGate {
         shape: DocumentShape? = null,
     ): ContentVerified? {
         if (decision == Decision.REJECT) return null
+        // نص طويل بلا أي دليل مستندي: بطاقة تهنئة أو إعلان. لا يدخل الأرشيف ولا المراجعة.
+        if (evidence == TextEvidence.REJECTED_CLEAR) return null
         // وجه بلا نص قاطع: صورة عائلية أو هوية لم تُثبت. لا تدخل الأرشيف ولا المراجعة.
         if (hasFace(decision) && evidence != TextEvidence.ACCEPTED && evidence != TextEvidence.PARTIAL) {
             return null
@@ -134,6 +138,7 @@ object ImportGate {
                 } else {
                     null
                 }
+            TextEvidence.REJECTED_CLEAR,
             TextEvidence.NO_TEXT,
             TextEvidence.NOT_CHECKED -> null
         }

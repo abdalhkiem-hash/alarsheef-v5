@@ -141,4 +141,29 @@ class DocumentContentGateTest {
     fun normalizeWords_replacesPunctuationWithSpaces() {
         assertEquals("فاتوره رقم 12", DocumentContentGate.normalizeWords("فاتورة: رقم#12"))
     }
+
+    // ---------- رفض قاطع: نص طويل بلا أي دليل مستندي (بطاقة تهنئة/إعلان) ----------
+
+    private val greetingCard = "تصميم تهنئة يسر نقابة المحاسبين اليمنيين أن تهنئكم في اليوم العالمي للمحاسبة " +
+        "و يوم المحاسب اليمني العاشر. كل عام وأنت وجميع الزملاء والأكاديميين والمهنيين في خير وفي أتم " +
+        "الصحة والعافية! دمتم السند الحقيقي للاقتصاد وحماة الأمانة المالية، وكل الشكر لهذه الجهود " +
+        "العظيمة التي تبذلونها في خدمة المهنة والمجتمع. يوم محاسبة سعيد ومبارك للجميع! 10 نوفمبر 2024"
+
+    @Test
+    fun longTextWithoutAnyDocumentCue_isClearlyRejected() {
+        val v = DocumentContentGate.verify(greetingCard)
+        assertTrue("متوقع رفض قاطع، والنتيجة: $v", v is ContentVerdict.Rejected && v.clear)
+    }
+
+    @Test
+    fun shortTextWithoutCue_isRejectedButNotClear() {
+        val v = DocumentContentGate.verify("شكرا لكم على الدعم الكبير")
+        assertTrue("$v", v is ContentVerdict.Rejected && !v.clear)
+    }
+
+    @Test
+    fun longTextWithAnAmount_isNeverClearlyRejected() {
+        val v = DocumentContentGate.verify(greetingCard + " المبلغ 1,500.00 ريال")
+        assertTrue("$v", !(v is ContentVerdict.Rejected && v.clear))
+    }
 }

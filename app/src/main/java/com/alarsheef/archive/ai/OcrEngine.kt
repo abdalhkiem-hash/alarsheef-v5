@@ -49,6 +49,9 @@ object OcrEngine {
     @Volatile private var samsungDead = false
     @Volatile private var samsungMissingLogged = false
     @Volatile private var samsung: SamsungOcr? = null
+
+    /** عدد الصور المتتالية التي قرأ فيها محرك آخر نصًا وسامسونغ فارغ؛ انظر [OcrFallbackPolicy]. */
+    @Volatile private var samsungEmptyStreak = 0
     @Volatile private var arabicDead = false
     private var arabic: TesseractOCR? = null
     private val arabicMutex = Mutex()
@@ -80,9 +83,25 @@ object OcrEngine {
                 if (cleaned.length >= MIN_CHARS && cleaned.length > (best?.length ?: 0)) best = cleaned
             }
             if (systemSupported(context)) keep(recognizeSystem(context, bitmap))
-            if ((best?.length ?: 0) < STRONG_CHARS) keep(recognizeSamsung(context, bitmap))
+            var samsungTried = false
+            var samsungChars = 0
+            if ((best?.length ?: 0) < STRONG_CHARS && OcrFallbackPolicy.shouldTrySamsung(samsungEmptyStreak)) {
+                samsungTried = true
+                val text = recognizeSamsung(context, bitmap)
+                samsungChars = text?.trim()?.length ?: 0
+                keep(text)
+            }
+            val beforeOthers = best?.length ?: 0
             if ((best?.length ?: 0) < STRONG_CHARS) keep(recognizeArabic(context, bitmap))
             if ((best?.length ?: 0) < STRONG_CHARS) keep(recognizeLatin(bitmap))
+            if (samsungTried) {
+                val otherChars = if (samsungChars > 0) beforeOthers else (best?.length ?: 0)
+                val streak = OcrFallbackPolicy.nextStreak(samsungEmptyStreak, samsungChars, otherChars, MIN_CHARS, STRONG_CHARS)
+                if (streak >= OcrFallbackPolicy.GIVE_UP_AFTER && samsungEmptyStreak < OcrFallbackPolicy.GIVE_UP_AFTER) {
+                    android.util.Log.i(TAG, "Samsung OCR: لا يُرجع نصًا مع أن غيره يقرأ — يُتجاوز في بقية هذا التشغيل")
+                }
+                samsungEmptyStreak = streak
+            }
             android.util.Log.i(TAG, "OCR محلي: أحرف=${best?.length ?: 0}")
             best
         } finally {

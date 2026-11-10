@@ -117,6 +117,16 @@ class ImportGateTest {
         )
     }
 
+
+    @Test
+    fun clearRejection_neverImports_evenForDocumentShape() {
+        for (decision in Decision.values()) {
+            assertNull(
+                decision.name,
+                ImportGate.finalStatus(decision, TextEvidence.REJECTED_CLEAR, DocumentShape.DOCUMENT)
+            )
+        }
+    }
     @Test
     fun insufficientTextWithFaceOrWeakShape_staysOut() {
         assertNull(ImportGate.finalStatus(Decision.FACE_STRONG, TextEvidence.REJECTED, DocumentShape.DOCUMENT))
