@@ -2,6 +2,7 @@ package com.alarsheef.archive.porter
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.alarsheef.archive.data.entities.ArchivedImage
 import com.alarsheef.archive.data.entities.ContentVerified
 import com.alarsheef.archive.data.entities.SourceApp
@@ -46,19 +47,29 @@ class ArchivePorter(
                 val output = context.contentResolver.openOutputStream(destination)
                     ?: return@withContext PorterResult.Failure
 
-                // الملفات الموجودة فعلًا فقط — العدّ والبيانات يطابقان محتوى الأرشيف
+                // الملفات الموجودة والقابلة للقراءة فقط — العدّ والبيانات يطابقان محتوى الأرشيف.
+                // اسم الإدخال يُبنى من تاريخ اليوم واسم الملف فقط، فملفان بالاسم نفسه في اليوم
+                // (مجلد فرعي مثلًا) كانا يُفشلان التصدير كله بخطأ إدخال مكرر: يُميَّز الثاني برقم.
+                val usedNames = HashSet<String>()
+                var skipped = 0
                 val entries = images.mapNotNull { image ->
                     val file = File(image.storedPath)
-                    if (file.exists()) image to file else null
+                    if (file.exists() && file.canRead()) {
+                        Triple(image, file, uniqueEntryName(entryNameOf(image), usedNames))
+                    } else {
+                        skipped++
+                        null
+                    }
                 }
+                if (skipped > 0) Log.w(TAG, "تصدير: تخطّي $skipped ملفًا غير موجود أو غير قابل للقراءة")
 
                 output.use { stream ->
                     ZipOutputStream(stream).use { zip ->
                         val metadata = JSONArray()
-                        entries.forEach { (image, _) ->
+                        entries.forEach { (image, _, entryName) ->
                             metadata.put(
                                 JSONObject()
-                                    .put("entry", entryNameOf(image))
+                                    .put("entry", entryName)
                                     .put("fileName", image.fileName)
                                     .put("contentHash", image.contentHash)
                                     .put("sourceApp", image.sourceApp.name)
@@ -76,8 +87,8 @@ class ArchivePorter(
                         zip.write(metadata.toString(2).toByteArray(Charsets.UTF_8))
                         zip.closeEntry()
 
-                        entries.forEach { (image, file) ->
-                            zip.putNextEntry(ZipEntry(entryNameOf(image)))
+                        entries.forEach { (_, file, entryName) ->
+                            zip.putNextEntry(ZipEntry(entryName))
                             file.inputStream().use { it.copyTo(zip) }
                             zip.closeEntry()
                         }
@@ -87,6 +98,7 @@ class ArchivePorter(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                Log.w(TAG, "تعذّر تصدير الأرشيف: ${e.javaClass.simpleName}: ${e.message}")
                 PorterResult.Failure
             }
         }
@@ -173,16 +185,35 @@ class ArchivePorter(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            Log.w(TAG, "تعذّر استيراد الأرشيف: ${e.javaClass.simpleName}: ${e.message}")
             PorterResult.Failure
         } finally {
             extracted.values.forEach { runCatching { it.delete() } }
         }
     }
 
+    private fun uniqueEntryName(name: String, used: MutableSet<String>): String = uniqueZipEntryName(name, used)
+
     private fun entryNameOf(image: ArchivedImage): String =
         "files/${image.year}/${image.month}/${image.day}/${image.fileName}"
 
     private companion object {
+        const val TAG = "ArchivePorter"
         const val METADATA_ENTRY = "metadata.json"
+    }
+}
+
+/**
+ * اسم إدخال ZIP فريد: يضيف رقمًا قبل الامتداد إن سبق استعمال [name] في الأرشيف نفسه.
+ * ZIP يرمي خطأ عند تكرار الاسم، فكان ملفان باسم واحد في اليوم يُفشلان التصدير كله.
+ */
+internal fun uniqueZipEntryName(name: String, used: MutableSet<String>): String {
+    if (used.add(name)) return name
+    val dot = name.lastIndexOf('.').takeIf { it > name.lastIndexOf('/') } ?: name.length
+    var n = 2
+    while (true) {
+        val candidate = name.substring(0, dot) + " ($n)" + name.substring(dot)
+        if (used.add(candidate)) return candidate
+        n++
     }
 }
