@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- أداة قياس OCR: في نسخة التطوير فقط ولا تدخل نسخة الإصدار -->
+    <application>
+        <receiver
+            android:name=".debug.OcrBenchReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.alarsheef.archive.OCR_BENCH" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

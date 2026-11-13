@@ -12,6 +12,7 @@ import com.alarsheef.archive.ai.GeminiClassifier
 import com.alarsheef.archive.ai.GeminiRepository
 import com.alarsheef.archive.ai.InvoiceInfo
 import com.alarsheef.archive.ai.OcrEngine
+import com.alarsheef.archive.ai.OcrQuality
 import com.alarsheef.archive.ai.SmartClassifier
 import com.alarsheef.archive.data.entities.ArchivedImage
 import com.alarsheef.archive.data.entities.ContentVerified
@@ -173,7 +174,10 @@ class AiAnalysisWorker(
                     localText = if (OcrEngine.isAvailable(context)) {
                         OcrEngine.recognizeFile(context, file)
                     } else null
-                    if (!localText.isNullOrBlank() && localText.length >= MIN_LOCAL_OCR_CHARS) {
+                    // نص عشوائي لا يُحفظ: يُطلب نص Gemini في نداء التصنيف نفسه بدل الاعتماد عليه
+                    if (!localText.isNullOrBlank() && localText.length >= MIN_LOCAL_OCR_CHARS &&
+                        OcrQuality.isUsable(localText)
+                    ) {
                         repository.saveOcrText(image.id, localText)
                         ocrText = localText
                         textSaved = true
@@ -189,7 +193,9 @@ class AiAnalysisWorker(
                     val provenDocument = image.contentVerified == ContentVerified.ACCEPTED ||
                         ArchiveNaming.labelOf(image.fileName) != null
                     if (canCallCloud() && (provenDocument || needsCloudClassification(local))) {
-                        val wantText = ocrEnabled && !textSaved
+                        // نص Gemini يتقدّم على المحلي للمستند المثبت: قرأ في القياس كل الحالات بلا خطأ بينما يفوّت
+                        // المحلي أسطرًا قد تبدو قراءته سليمة. يُطلب في النداء نفسه (بلا استدعاء إضافي).
+                        val wantText = ocrEnabled && (!textSaved || provenDocument)
                         GeminiClassifier.classify(file, usePro, includeText = wantText)?.let { result ->
                             commitQuota()
                             cloudCalls++

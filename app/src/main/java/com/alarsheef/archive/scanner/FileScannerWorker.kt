@@ -520,7 +520,12 @@ class FileScannerWorker(context: Context, params: WorkerParameters)
         val assessment = ImportGate.evaluate(file, hasFace, excludePersonalPhotos = true, documentsOnly = true, displayName = name)
         if (assessment.decision == ImportGate.Decision.REJECT) return null
         val outcome = if (keepGateText) {
-            runCatching { ContentGate.evaluate(applicationContext, listOf(file), allowCloud = false) }
+            runCatching {
+                ContentGate.evaluate(
+                    applicationContext, listOf(file), allowCloud = false,
+                    escalateWhenPoor = assessment.decision == ImportGate.Decision.STRONG,
+                )
+            }
                 .getOrDefault(ContentGate.Outcome.Unavailable)
         } else {
             ContentGate.Outcome.Unavailable
