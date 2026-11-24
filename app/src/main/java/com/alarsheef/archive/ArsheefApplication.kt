@@ -34,6 +34,7 @@ class ArsheefApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         com.alarsheef.archive.onedrive.OneDriveAuth.restore(this)
+        com.alarsheef.archive.ai.GeminiRepository.attach(this)
         CoroutineScope(Dispatchers.IO).launch {
             val prefs = SettingsPreferences(this@ArsheefApplication)
 
@@ -41,10 +42,7 @@ class ArsheefApplication : Application(), ImageLoaderFactory {
                 WorkScheduler.scheduleDailyScan(this@ArsheefApplication)
             }
             if (prefs.backupEnabled.first()) {
-                val folderUri = prefs.backupFolderUri.first()
-                if (folderUri != null) {
-                    BackupScheduler.schedule(this@ArsheefApplication, prefs.backupFrequency.first())
-                }
+                BackupScheduler.schedule(this@ArsheefApplication, prefs.backupFrequency.first())
             }
 
             // استئناف التحليل الذكي لأي صور لم تُحلَّل بعد (خروج آمن فوري لو لا شيء معلّق)

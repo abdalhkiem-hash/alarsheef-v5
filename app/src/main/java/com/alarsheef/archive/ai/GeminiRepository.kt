@@ -32,28 +32,93 @@ object GeminiRepository {
 
     private const val TAG = "GeminiRepository"
 
-    /** نموذج سريع ورخيص — الافتراضي لتقليل استهلاك الحد اليومي. (2.5-flash موقوف لحسابات جديدة فحُدِّث لـ3.5) */
-    const val MODEL_FLASH = "gemini-3.5-flash"
-
     /**
-     * بديل يُستخدم تلقائيًا إن أعاد Google 404 للنموذج الأساسي (تقاعد الاسم). الاسم المستعار
-     * `gemini-flash-latest` يشير دائمًا لأحدث نموذج Flash، فلا يتعطل الذكاء السحابي بصمت.
-     * نموذج Pro أُزيل: مفتاح الطبقة المجانية يرفضه (429) ولا يحتاجه أرشيف مستندات.
+     * سلسلة النماذج مرتبة من الأدق إلى الأخف (فُحصت على المفتاح 24/11/2026).
+     * لكل نموذج حصته اليومية المستقلة في الطبقة المجانية (20 طلبًا)، فالسلسلة كلها ~140 طلبًا يوميًا.
+     * أي فشل في نموذج (حصة، ازدحام 503، غير موجود 404، مهلة، رد فارغ أو غير صالح) ينقل النداء نفسه
+     * فورًا إلى التالي: الدقة أولًا ثم الاستمرارية. `gemini-3.5-flash` حُذف لأنه يتشارك حصة 3.6.
+     * نماذج 2.5 تعيد 404 على هذا المفتاح، وPro ترفضه الطبقة المجانية.
      */
-    const val MODEL_FALLBACK = "gemini-flash-latest"
+    val MODEL_CHAIN: List<String> = listOf(
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3-flash-preview",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-lite-latest",
+    )
+
+    /** النموذج المفضّل (رأس السلسلة). */
+    val MODEL_FLASH: String get() = MODEL_CHAIN.first()
+
+    /** حد Google المجاني اليومي لكل نموذج (رد 429 الفعلي: quotaValue = 20). */
+    const val PER_MODEL_DAILY_LIMIT = 20
+
+    /** سقف محاولات سحابية يومية يُحترم قبل أي استدعاء: حصص نماذج السلسلة معًا. */
+    const val DAILY_LIMIT = PER_MODEL_DAILY_LIMIT * 7
+
+    /** متى يعود كل نموذج للخدمة بعد فشله. يُحفظ على القرص فلا يُحرق نداء فاشل مع كل دفعة أو تشغيل. */
+    private val skipUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     @Volatile
-    private var activeModel: String = MODEL_FLASH
+    private var store: android.content.SharedPreferences? = null
 
-    /** سقف محاولات سحابية يومية يُحترم قبل أي استدعاء. */
-    const val DAILY_LIMIT = 50
+    /** آخر نموذج أجاب بنجاح — يُسجَّل مع نتيجة التحليل. */
+    @Volatile
+    private var lastAnswered: String = MODEL_CHAIN.first()
+
+    /** يُستدعى من Application: يسترجع حالة النماذج المحفوظة. */
+    fun attach(context: android.content.Context) {
+        val prefs = context.applicationContext.getSharedPreferences("gemini_quota_state", android.content.Context.MODE_PRIVATE)
+        store = prefs
+        val now = System.currentTimeMillis()
+        val stale = ArrayList<String>()
+        prefs.all.forEach { (key, value) ->
+            if (!key.startsWith(SKIP_PREFIX) && !key.startsWith(OLD_PREFIX)) return@forEach
+            if (value is Long && value > now) {
+                skipUntil[key.removePrefix(SKIP_PREFIX).removePrefix(OLD_PREFIX)] = value
+            } else {
+                stale += key
+            }
+        }
+        if (stale.isNotEmpty()) prefs.edit().apply { stale.forEach { remove(it) } }.apply()
+        refreshPause()
+    }
+
+    private const val SKIP_PREFIX = "skip_"
+    private const val OLD_PREFIX = "exhausted_"
+
+    private fun isSkipped(model: String): Boolean =
+        (skipUntil[model] ?: 0L) > System.currentTimeMillis()
+
+    /** كل نماذج السلسلة متوقفة (حصة/ازدحام): لا نداء حتى يعود أحدها. */
+    val dailyQuotaExhausted: Boolean
+        get() = MODEL_CHAIN.all { isSkipped(it) }
+
+    private fun skipModel(model: String, ms: Long, reason: String) {
+        if (ms <= 0L) return
+        val until = System.currentTimeMillis() + ms
+        skipUntil[model] = until
+        store?.edit()?.putLong(SKIP_PREFIX + model, until)?.apply()
+        Log.w(TAG, "تخطّي $model حتى ${java.util.Date(until)}: $reason")
+        refreshPause()
+    }
+
+    /** يُظهر التوقف في الشاشة الرئيسية حين تتوقف كل النماذج. */
+    private fun refreshPause() {
+        if (!dailyQuotaExhausted) return
+        val until = MODEL_CHAIN.minOf { skipUntil[it] ?: 0L }
+        if (until > rateLimitedUntil) rateLimitedUntil = until
+        if (until > pauseUntil.value) pauseUntil.value = until
+    }
 
     /**
-     * true بعد أول استجابة 429 — تجاوز حدّ Google الفوري (RPM/يومي).
+     * true أثناء تهدئة عامة (انقطاع الشبكة) أو حين تتوقف كل النماذج.
      * يقرأه العامل كي يتوقّف عن استهلاك حصّته اليومية على نداءات مصيرها الفشل.
      */
     val rateLimited: Boolean
-        get() = System.currentTimeMillis() < rateLimitedUntil
+        get() = System.currentTimeMillis() < rateLimitedUntil || dailyQuotaExhausted
 
     /**
      * نهاية التهدئة. تبقى حتى تنقضي حتى لو بدأت دفعة تحليل جديدة،
@@ -67,7 +132,7 @@ object GeminiRepository {
     /** تقرأه الشاشة الرئيسية لإظهار «التسمية السحابية متوقفة مؤقتًا». */
     val cloudPauseUntil: StateFlow<Long> = pauseUntil.asStateFlow()
 
-    /** لا تُمسح تهدئة ما زالت سارية. */
+    /** لا تُمسح تهدئة ما زالت سارية، ولا توقف النماذج. */
     fun resetRateLimit() {
         if (rateLimited) return
         rateLimitedUntil = 0L
@@ -84,29 +149,28 @@ object GeminiRepository {
 
     private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
     private const val CONNECT_TIMEOUT_MS = 20_000
-    private const val READ_TIMEOUT_MS = 60_000
+    private const val READ_TIMEOUT_MS = 45_000
     private const val MAX_OCR_DIMENSION = 1600
     private const val MAX_CLASSIFY_DIMENSION = 1024
 
     /** هل أُضيف المفتاح فعلًا في local.properties؟ */
     fun isConfigured(): Boolean = BuildConfig.GEMINI_API_KEY.isNotBlank()
 
-    /** النموذج الفعّال حاليًا. [usePro] مُبقى في التوقيع فقط، لا يغيّر النموذج. */
+    /**
+     * النموذج الذي أجاب آخر نداء ناجح (يُسجَّل مع نتيجة التحليل)، أو أول نموذج متاح.
+     * [usePro] مُبقى في التوقيع فقط، لا يغيّر النموذج.
+     */
     @Suppress("UNUSED_PARAMETER")
-    fun model(usePro: Boolean = false): String = activeModel
+    fun model(usePro: Boolean = false): String = lastAnswered
 
-    /** يُحوَّل إلى البديل مرة واحدة عند 404؛ يعيد true لو تغيّر النموذج فتستحق المحاولة إعادة. */
-    private fun switchToFallback(): Boolean {
-        if (activeModel == MODEL_FALLBACK) return false
-        Log.w(TAG, "النموذج $activeModel غير متاح (404)، التحويل إلى $MODEL_FALLBACK")
-        activeModel = MODEL_FALLBACK
-        return true
-    }
+    /** أول نموذج متاح الآن في السلسلة (للفحص والعرض). */
+    fun firstAvailableModel(): String = MODEL_CHAIN.firstOrNull { !isSkipped(it) } ?: MODEL_CHAIN.first()
 
     /**
-     * استدعاء عام generateContent.
+     * استدعاء عام generateContent على سلسلة النماذج.
      * @param jsonSchema مخطط JSON اختياري — عند وجوده يُطلب رد JSON منظَّم.
-     * @return نص المرشّح الأول، أو null عند أي فشل.
+     * @param accept يتحقق من الرد؛ الرد المرفوض (JSON غير صالح مثلًا) ينقل إلى النموذج التالي.
+     * @return نص أول رد مقبول، أو null إن فشلت كل النماذج.
      */
     suspend fun generateContent(
         prompt: String,
@@ -114,9 +178,10 @@ object GeminiRepository {
         usePro: Boolean,
         jsonSchema: String? = null,
         maxImageDimension: Int = MAX_CLASSIFY_DIMENSION,
+        accept: (String) -> Boolean = { true },
     ): String? = withContext(Dispatchers.IO) {
-        if (!isConfigured()) return@withContext null
-        try {
+        if (!isConfigured() || rateLimited) return@withContext null
+        val body = try {
             val parts = org.json.JSONArray().put(JSONObject().put("text", prompt))
             if (image != null) {
                 val base64 = encodeJpegBase64(image, maxImageDimension) ?: return@withContext null
@@ -125,54 +190,86 @@ object GeminiRepository {
                         .put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", base64))
                 )
             }
-
             val generationConfig = JSONObject().put("temperature", 0.1)
             if (jsonSchema != null) {
                 generationConfig
                     .put("responseMimeType", "application/json")
                     .put("responseSchema", JSONObject(jsonSchema))
             }
-
-            val body = JSONObject()
+            JSONObject()
                 .put("contents", org.json.JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
                 .put("generationConfig", generationConfig)
-
-            val connection = URL("${BASE_URL}${model(usePro)}:generateContent")
-                .openConnection() as HttpURLConnection
-            try {
-                connection.requestMethod = "POST"
-                connection.connectTimeout = CONNECT_TIMEOUT_MS
-                connection.readTimeout = READ_TIMEOUT_MS
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                connection.setRequestProperty("x-goog-api-key", BuildConfig.GEMINI_API_KEY)
-                connection.outputStream.use { out ->
-                    out.write(body.toString().toByteArray(Charsets.UTF_8))
-                }
-
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code == 404 && switchToFallback()) {
-                    return@withContext generateContent(prompt, image, usePro, jsonSchema, maxImageDimension)
-                }
-                if (code !in 200..299) {
-                    pauseFor(code, networkFailed = false)
-                    Log.w(TAG, "HTTP $code من Gemini: ${response.take(300)}")
-                    return@withContext null
-                }
-                firstText(response)?.takeIf { it.isNotBlank() }
-            } finally {
-                connection.disconnect()
-            }
-        } catch (e: IOException) {
-            pauseFor(httpCode = null, networkFailed = true)
-            Log.w(TAG, "انقطع الاتصال بـ Gemini: ${e.javaClass.simpleName}: ${e.message}")
-            null
+                .toString()
         } catch (e: Exception) {
-            Log.w(TAG, "فشل استدعاء Gemini: ${e.javaClass.simpleName}: ${e.message}")
-            null
+            Log.w(TAG, "تعذّر تجهيز الطلب: ${e.javaClass.simpleName}: ${e.message}")
+            return@withContext null
         }
+
+        for (model in MODEL_CHAIN) {
+            if (isSkipped(model)) continue
+            val attempt = callModel(model, body)
+            if (attempt.text != null && accept(attempt.text)) {
+                lastAnswered = model
+                return@withContext attempt.text
+            }
+            val decision = GeminiCallPolicy.failover(
+                attempt.httpCode, attempt.errorBody, attempt.timedOut, attempt.offline,
+                System.currentTimeMillis(),
+            )
+            val reason = when {
+                attempt.offline -> "لا اتصال"
+                attempt.timedOut -> "انتهت المهلة"
+                attempt.httpCode in 200..299 -> "رد فارغ أو غير صالح"
+                else -> "HTTP ${attempt.httpCode}"
+            }
+            Log.w(TAG, "فشل $model ($reason)${if (decision.tryNext) "، الانتقال إلى التالي" else ""}")
+            skipModel(model, decision.skipModelMs, reason)
+            if (!decision.tryNext) {
+                pauseFor(attempt.httpCode, networkFailed = attempt.offline)
+                return@withContext null
+            }
+        }
+        Log.w(TAG, "فشلت كل نماذج السلسلة لهذا الطلب")
+        null
+    }
+
+    private class Attempt(
+        val text: String?,
+        val httpCode: Int?,
+        val errorBody: String = "",
+        val timedOut: Boolean = false,
+        val offline: Boolean = false,
+    )
+
+    private fun callModel(model: String, body: String): Attempt = try {
+        val connection = URL("${BASE_URL}$model:generateContent").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = CONNECT_TIMEOUT_MS
+            connection.readTimeout = READ_TIMEOUT_MS
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.setRequestProperty("x-goog-api-key", BuildConfig.GEMINI_API_KEY)
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code in 200..299) {
+                Attempt(firstText(response)?.takeIf { it.isNotBlank() }, code)
+            } else {
+                Attempt(null, code, errorBody = response)
+            }
+        } finally {
+            connection.disconnect()
+        }
+    } catch (e: java.net.SocketTimeoutException) {
+        Attempt(null, null, timedOut = true)
+    } catch (e: IOException) {
+        // لا اتصال بالإنترنت (لا DNS، لا شبكة): يوقف السلسلة كلها
+        Attempt(null, null, offline = true)
+    } catch (e: Exception) {
+        Log.w(TAG, "فشل استدعاء $model: ${e.javaClass.simpleName}: ${e.message}")
+        Attempt(null, null)
     }
 
     /** نتيجة نداء الفحص: رمز HTTP (null عند انقطاع الشبكة) ومدة الرد. */

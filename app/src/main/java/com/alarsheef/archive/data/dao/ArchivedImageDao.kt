@@ -177,13 +177,26 @@ interface ArchivedImageDao {
         """SELECT * FROM archived_images
            WHERE aiAnalyzedAt IS NOT NULL AND nameLocked = 0 AND contentVerified NOT IN (2, 3)
              AND importedAt >= :sinceMillis
-             AND fileName GLOB '*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]*'
+             AND (fileName GLOB '*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]*'
+                  OR fileName GLOB '*_[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*')
              AND id NOT IN (SELECT imageId FROM ai_cloud_meta)
              AND (contentVerified = 1
                   OR id IN (SELECT imageId FROM image_labels WHERE label = 'مستند / ملف نصي'))
            ORDER BY id DESC LIMIT :limit"""
     )
     suspend fun getSmartNameCandidates(sinceMillis: Long, limit: Int): List<ArchivedImage>
+
+    /** أسماء ذكية بناها التطبيق من النص المحلي (بلا رد سحابي): تُعاد بناؤها مرة بعد إصلاح القارئ. */
+    @Query(
+        """SELECT archived_images.* FROM archived_images
+           INNER JOIN ocr_texts ON ocr_texts.imageId = archived_images.id
+           WHERE archived_images.nameLocked = 0
+             AND archived_images.fileName GLOB '*_[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
+             AND archived_images.id NOT IN (SELECT imageId FROM ai_cloud_meta)
+             AND length(trim(ocr_texts.text)) > 0
+           ORDER BY archived_images.id ASC"""
+    )
+    suspend fun smartNamedFromLocalText(): List<ArchivedImage>
 
     @Query("SELECT * FROM archived_images WHERE contentVerified = 2 ORDER BY importedAt DESC")
     fun observePendingReviewImages(): Flow<List<ArchivedImage>>

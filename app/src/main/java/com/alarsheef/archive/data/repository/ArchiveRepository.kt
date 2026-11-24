@@ -679,7 +679,11 @@ class ArchiveRepository(context: Context, database: AppDatabase? = null) {
 
     suspend fun smartNameCandidates(sinceMillis: Long, limit: Int): List<ArchivedImage> =
         imageDao.getSmartNameCandidates(sinceMillis, limit)
-            .filter { com.alarsheef.archive.util.ArchiveNaming.isAutoName(it.fileName) }
+            .filter { com.alarsheef.archive.util.ArchiveNaming.isAutoName(it.fileName) ||
+                com.alarsheef.archive.util.ArchiveNaming.isSmartName(it.fileName) }
+
+    suspend fun smartNamedFromLocalText(): List<ArchivedImage> =
+        imageDao.smartNamedFromLocalText().filter { com.alarsheef.archive.util.ArchiveNaming.isSmartName(it.fileName) }
 
     suspend fun saveOcrText(imageId: Long, text: String) =
         aiDao.upsertOcr(com.alarsheef.archive.data.entities.OcrText(imageId, text, System.currentTimeMillis()))

@@ -27,19 +27,29 @@ object DocumentName {
         val nameReference: String?,
         /** رقم الحوالة إن وُجد، للبحث. قد يطابق [nameReference] إذا كان هو رقم الورقة الوحيد. */
         val transferNumber: String?,
+        /** الجهة من دليل صريح (عنوان أو بادئة جهة)؛ false = سطر قصير فقط، فتتقدّم عليه جهة السحابة. */
+        val partyStrong: Boolean = true,
     ) {
         /** جهة أو مبلغ أو رقم: يستحق اسماً ذكياً لا بادئة مؤقتة فقط. */
         fun isRich(): Boolean = party != null || amount != null || nameReference != null
     }
 
     private val PARTY_LABELS = listOf("عميلنا", "اسم العميل", "العميل", "المستفيد", "المرسل", "الجهة")
-    private val ORG_PREFIXES = listOf("شركة", "بنك", "مكتب", "مؤسسة", "المخزن")
+    private val ORG_PREFIXES = listOf("شركة", "بنك", "مكتب", "مؤسسة", "المخزن", "محلات", "محل", "معرض", "مصنع")
     private val PARTY_STOP = setOf(
         "سند", "اشعار", "دائن", "مدين", "فاتوره", "حواله", "حوالات", "تحويل", "ايصال",
         "تاريخ", "مبلغ", "ريال", "حساب", "عموله", "اجمالي", "دولار", "سعودي", "يمني",
         "رقم", "الصافي", "صافي", "الرسوم", "الحاله", "معلقه", "مقبوله", "ضريبيه",
         "ارسال", "استلام", "الجوال", "لمشترك",
         "امر", "صرف", "شراء", "تسويه", "علاجات",
+        // عناوين حقول تظهر وحدها في سطر حين يفصل OCR العمود عن قيمه (لقطات جوالي/المحافظ):
+        // كانت تصير «الجهة» فيخرج اسم مثل «حوالة_إلى_...» أو «مستند_مرجع-المصدر_...».
+        "الى", "من", "مرجع", "المصدر", "المصدريه", "المنظمه", "منظمه", "الوجهه", "وقت", "العمليه",
+        "كود", "المستلم", "الاسم", "لاسم", "الاول", "الاب", "الجد", "الرباعي", "لجوال", "جوال",
+        "محفظه", "المبلغ", "لمبلغ", "لعموله", "لحاله", "البيان", "ملاحظات", "الفرع", "الموظف",
+        "الريال", "السعودي", "اليمني", "الدولار", "التاريخ", "الحساب", "تلفون", "هاتف",
+        "المرسل", "المستفيد", "العميل", "عميلنا", "الجهه",
+        "المحترم", "المحترمون", "المحترمين", "الاخ", "الاخوه", "السيد", "الساده",
     ).map { DocumentContentGate.normalizeWords(it) }.toSet()
 
     /** أرقام الورقة بالأولوية. رقم الحوالة ومرجع المصدر آخر الاحتياط. */
@@ -86,12 +96,21 @@ object DocumentName {
             keepLatinCase = true,
         )
         val words = DocumentContentGate.normalizeWords(text)
-        val transfer = firstLabeled(loose, TRANSFER_LABELS)
-        val paper = paperNumber(loose) ?: transfer ?: firstLabeled(loose, SOURCE_REF_LABELS)
+        // التطبيع نفسه لكن سطرًا سطرًا: الرقم يُطلب في سطر عنوانه أو الذي يليه فقط
+        val lined = text.lines().joinToString("\n") { line ->
+            DocumentContentGate.normalizeLoose(
+                line.replace('−', '-').replace('–', '-'),
+                keepLatinCase = true,
+            )
+        }
+        val transfer = firstLabeled(lined, TRANSFER_LABELS)
+        val paper = paperNumber(lined) ?: transfer ?: firstLabeled(lined, SOURCE_REF_LABELS)
         val money = accountMoney(loose)
+        val strong = strongPartyOf(text)
         return Fields(
             type = resolveType(words, userTypes),
-            party = partyOf(text),
+            party = strong ?: weakPartyOf(text),
+            partyStrong = strong != null,
             date = dateOf(loose),
             amount = money?.first,
             currency = money?.second,
@@ -117,12 +136,23 @@ object DocumentName {
             return null
         }
         val type = ArchiveNaming.part(fields.type, 32).ifBlank { "مستند" }
-        val party = ArchiveNaming.part(fields.party ?: gapVendor.orEmpty(), 40).ifBlank { null }
-        val date = fields.date ?: ArchiveNaming.normalizeDate(gapDate) ?: fallbackDate
+        // الجهة: دليل الورقة الصريح أولًا، ثم جهة Gemini، ثم السطر القصير
+        val cloudVendor = cleanVendor(gapVendor)
+        val chosenParty = when {
+            fields.party != null && fields.partyStrong -> fields.party
+            cloudVendor != null -> cloudVendor
+            else -> fields.party
+        }
+        val party = ArchiveNaming.part(chosenParty.orEmpty(), 40).ifBlank { null }
+        // تاريخ الورقة يُقبل فقط إن كان معقولًا بالنسبة ليوم الأرشفة: السنة بخط اليد تُقرأ خطأ
+        // كثيرًا (2021/2022/2024 لسندات وصلت في 2026). غير المعقول يُستبدل بيوم الأرشفة.
+        val date = listOfNotNull(fields.date, ArchiveNaming.normalizeDate(gapDate?.let(::compactDate)))
+            .firstOrNull { plausibleDate(it, fallbackDate) } ?: fallbackDate
         val amount = fields.amount ?: gapAmount?.let { ArchiveNaming.cleanAmount(it) }?.ifBlank { null }
         val currency = when {
             fields.amount != null -> fields.currency
-            amount != null -> gapCurrency ?: fields.currency
+            // عملة السحابة بالصيغة نفسها لعملة الورقة («ريال يمني» ← ر.ي)
+            amount != null -> gapCurrency?.let { currencyToken(it) ?: it } ?: fields.currency
             else -> null
         }?.let { ArchiveNaming.part(it, 8) }?.ifBlank { null }
         val amountPart = amount?.let { it + currency.orEmpty() }
@@ -170,14 +200,44 @@ object DocumentName {
         return title.groupValues[2].ifBlank { null }
     }
 
+    /**
+     * قيمة الرقم بعد عنوانه: أول رمز فيه رقم، في بقية سطر العنوان ثم السطر التالي فقط.
+     * كان يأخذ أي كلمة تلي العنوان ولو بعد سطور: «كود العملية ⏎ مرجع المصدر» أعطى «مرجع»،
+     * و«رقم الإشعار ⏎ 2026/11/22 612306» أعطى «2026» من التاريخ. التاريخ والوقت يُتخطيان.
+     */
     private fun firstLabeled(loose: String, labels: List<String>): String? {
         for (label in labels) {
             val n = DocumentContentGate.normalizeLoose(label)
-            val regex = Regex(
-                "(?<![\\p{L}\\p{N}])" + Regex.escape(n) + "(?![\\p{L}\\p{N}])\\s*[:#\\-]?\\s*" + VALUE_TOKEN.pattern
-            )
-            val value = regex.find(loose)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() } ?: continue
-            return value
+            val regex = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(n) + "(?![\\p{L}\\p{N}])")
+            for (match in regex.findAll(loose)) {
+                valueAfter(loose, match.range.last + 1)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private val DATE_OR_TIME = Regex(
+        "\\d{1,4}[/\\-.]\\d{1,2}[/\\-.]\\d{1,4}|\\d{1,2}:\\d{2}(?::\\d{2})?"
+    )
+
+    /** رقم جوال يمني (77/73/71/70/78 + 7 أرقام): يظهر قرب العناوين في الإشعارات وليس رقم الورقة. */
+    private val MOBILE = Regex("7[01378][0-9]{7}")
+
+    private fun valueAfter(loose: String, start: Int): String? {
+        val rest = loose.substring(start)
+        val lines = rest.split('\n')
+        // بقية سطر العنوان + أول سطر غير فارغ بعده
+        val window = buildList {
+            add(lines.first())
+            lines.drop(1).firstOrNull { it.isNotBlank() }?.let { add(it) }
+        }
+        for (line in window) {
+            val clean = DATE_OR_TIME.replace(line, " ")
+            for (token in VALUE_TOKEN.findAll(clean)) {
+                val value = token.groupValues[1].trim('-', '|')
+                if (MOBILE.matches(value)) continue
+                if (value.any { it.isDigit() }) return value
+            }
         }
         return null
     }
@@ -191,8 +251,10 @@ object DocumentName {
     private fun labeledMoney(loose: String, labels: List<String>): Pair<String, String?>? {
         for (label in labels) {
             val n = DocumentContentGate.normalizeLoose(label)
+            // بين العنوان ورقمه قد يقع عنوان آخر بلا أرقام («مبلغ الحساب ⏎ عملة الحساب ⏎ 61,764»)
             val regex = Regex(
-                "(?<![\\p{L}\\p{N}])" + Regex.escape(n) + "(?![\\p{L}\\p{N}])\\s*[:#\\-]?\\s*-?" + MONEY.pattern
+                "(?<![\\p{L}\\p{N}])" + Regex.escape(n) + "(?![\\p{L}\\p{N}])[^\\d]{0,30}?-?" + MONEY.pattern +
+                    "(?![/\\-]\\d)"
             )
             val match = regex.find(loose) ?: continue
             val raw = match.groupValues[1]
@@ -205,22 +267,41 @@ object DocumentName {
         return null
     }
 
-    /** مبلغ بجانب عملة، ويتخطى سطر العمولة. */
+    private const val CURRENCY_WORDS = "ريال\\s+سعودي|ريال\\s+يمني|دولار|ريال|سعودي|يمني|ر\\.?\\s*س|ر\\.?\\s*ي"
+
+    /**
+     * مبلغ بجانب عملة، ويتخطى سطر العمولة ورقم الورقة. الرقم قبل العملة أولًا («61,764 سعودي»)،
+     * ثم العملة قبل الرقم («ريال ⏎ ١٥,٠٠٠» في رأس السند).
+     */
     private fun currencyAdjacent(loose: String): Pair<String, String?>? {
-        val regex = Regex("-?" + MONEY.pattern + "\\s*(ريال\\s+سعودي|ريال\\s+يمني|دولار|ريال|ر\\.?\\s*س|ر\\.?\\s*ي)")
-        for (match in regex.findAll(loose)) {
-            val before = loose.substring(maxOf(0, match.range.first - 24), match.range.first)
-            val beforeWords = DocumentContentGate.normalizeWords(before)
-            val commission = COMMISSION_LABELS.any { label ->
-                beforeWords.contains(DocumentContentGate.normalizeWords(label))
+        val numberFirst = Regex("-?" + MONEY.pattern + "\\s*(" + CURRENCY_WORDS + ")(?![\\p{L}])")
+        val currencyFirst = Regex("(?<![\\p{L}])(" + CURRENCY_WORDS + ")\\s*-?" + MONEY.pattern + "(?![/\\-]\\d)")
+        for ((regex, moneyGroup, currencyGroup) in listOf(
+            Triple(numberFirst, 1, 2),
+            Triple(currencyFirst, 2, 1),
+        )) {
+            for (match in regex.findAll(loose)) {
+                val numberStart = match.groups[moneyGroup]?.range?.first ?: continue
+                val before = loose.substring(maxOf(0, numberStart - 24), numberStart)
+                val beforeWords = DocumentContentGate.normalizeWords(before)
+                val commission = COMMISSION_LABELS.any { label ->
+                    beforeWords.contains(DocumentContentGate.normalizeWords(label))
+                }
+                if (commission) continue
+                // «الرقم: 46230 ⏎ ريال»: رقم السند يجاور كلمة العملة لكنه ليس مبلغًا
+                if (REFERENCE_BEFORE.containsMatchIn(loose.substring(maxOf(0, numberStart - 12), numberStart))) continue
+                // جوال أو هاتف أرضي (يبدأ بصفر) بجوار كلمة العملة في الترويسة ليس مبلغًا
+                val raw = match.groupValues[moneyGroup]
+                if (!raw.contains(',') && (MOBILE.matches(raw) || (raw.startsWith("0") && raw.length >= 6))) continue
+                val amount = ArchiveNaming.cleanAmount(raw)
+                if (amount.isBlank()) continue
+                return amount to currencyToken(match.groupValues[currencyGroup])
             }
-            if (commission) continue
-            val amount = ArchiveNaming.cleanAmount(match.groupValues[1])
-            if (amount.isBlank()) continue
-            return amount to currencyToken(match.groupValues[2])
         }
         return null
     }
+
+    private val REFERENCE_BEFORE = Regex("(?<![\\p{L}])(?:ال)?رقم[^\\p{L}\\d]*$")
 
     private fun currencyIn(near: String, whole: String): String? {
         currencyToken(near)?.let { return it }
@@ -231,18 +312,56 @@ object DocumentName {
     private fun abbrev(letter: String) =
         Regex("(?<![\\p{L}\\p{N}])ر\\.?\\s*$letter(?![\\p{L}\\p{N}])")
 
+    /** «سعودي» أو «يمني» وحدها بعد المبلغ (عمود «عملة الحساب» في إشعارات الصرافة). */
+    private val BARE_SAR = Regex("(?<![\\p{L}])سعودي(?![\\p{L}])")
+    private val BARE_YER = Regex("(?<![\\p{L}])يمني(?![\\p{L}])")
+
     private fun currencyToken(text: String): String? {
         val n = DocumentContentGate.normalizeLoose(text)
         return when {
-            n.contains("ريال سعودي") || abbrev("س").containsMatchIn(n) || n.contains("sar") -> "ر.س"
-            n.contains("ريال يمني") || abbrev("ي").containsMatchIn(n) || n.contains("yer") -> "ر.ي"
+            n.contains("ريال سعودي") || abbrev("س").containsMatchIn(n) || n.contains("sar") ||
+                BARE_SAR.containsMatchIn(n) -> "ر.س"
+            n.contains("ريال يمني") || abbrev("ي").containsMatchIn(n) || n.contains("yer") ||
+                BARE_YER.containsMatchIn(n) -> "ر.ي"
             n.contains("دولار") || n.contains("usd") -> "دولار"
             n.contains("ريال") -> "ريال"
             else -> null
         }
     }
 
-    private fun dateOf(loose: String): String? {
+    /**
+     * جهة Gemini مختصرة: النموذج الخفيف يحشو أحيانًا نص الترويسة كله في الحقل.
+     * يُؤخذ ما قبل أول فاصل («/» أو «|» أو سطر جديد)، وبحد أقصى 5 كلمات.
+     */
+    private fun cleanVendor(raw: String?): String? {
+        fun arabic(word: String) = word.any { it in '؀'..'ۿ' }
+        val segments = raw?.split('/', '|', '\n')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+        // الاسم العربي أولًا إن ذُكر الاسمان («Super Feed / سوبر فيد لصناعة الأعلاف»)
+        val segment = segments.firstOrNull { s -> s.split(Regex("\\s+")).any(::arabic) } ?: segments.firstOrNull()
+        val words = segment.orEmpty().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val picked = if (words.any(::arabic)) {
+            words.dropWhile { !arabic(it) }.takeWhile(::arabic)
+        } else {
+            words
+        }
+        return picked.take(5).joinToString(" ").ifBlank { null }
+    }
+
+    /** أقصى عمر لورقة تُؤرشف متأخرة؛ ما هو أقدم يُعدّ سنة مقروءة خطأ. */
+    private const val MAX_PAPER_AGE_DAYS = 400L
+
+    internal fun plausibleDate(date: String, archiveDate: String): Boolean = runCatching {
+        val d = java.time.LocalDate.parse(date)
+        val archive = java.time.LocalDate.parse(archiveDate)
+        !d.isAfter(archive.plusDays(1)) && !d.isBefore(archive.minusDays(MAX_PAPER_AGE_DAYS))
+    }.getOrDefault(true)
+
+    /** «١٠ / ١ / ٢٠٢١» ← «10/1/2021»: مسافات حول الفواصل كانت تُسقط التاريخ كله. */
+    private fun compactDate(text: String): String =
+        Regex("(\\d)\\s*([/\\-.])\\s*(?=\\d)").replace(DocumentContentGate.normalizeLoose(text), "$1$2")
+
+    private fun dateOf(rawLoose: String): String? {
+        val loose = compactDate(rawLoose)
         val labeled = Regex("تاريخ\\s*[:#\\-]?\\s*(\\d{1,4}[/\\-.]\\d{1,2}[/\\-.]\\d{1,4})").find(loose)
         ArchiveNaming.normalizeDate(labeled?.groupValues?.get(1))?.let { return it }
         val any = Regex("(?<!\\d)(\\d{4}[/\\-.]\\d{1,2}[/\\-.]\\d{1,2}|\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{4})(?!\\d)")
@@ -252,7 +371,8 @@ object DocumentName {
         return null
     }
 
-    private fun partyOf(original: String): String? {
+    /** جهة بدليل صريح: بعد عنوان («عميلنا:»، «المستفيد:») أو سطر يبدأ ببادئة جهة («شركة»، «محلات»). */
+    private fun strongPartyOf(original: String): String? {
         val lines = original.lines().map { it.trim() }.filter { it.isNotEmpty() }.take(12)
         for (line in lines) {
             val originalWords = line.split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -274,6 +394,15 @@ object DocumentName {
             val name = takeName(restOriginal, restNormal) ?: continue
             return ArchiveNaming.part("$prefix $name", 40).ifBlank { null }
         }
+        return null
+    }
+
+    /**
+     * جهة ضعيفة الدليل: أول سطر قصير بلا أرقام ولا كلمات حقول. تصيب في الأوراق البسيطة
+     * («القاسمي») وتخطئ في الأوراق المزدحمة («أمام الهتار للصرافه»، «المحترمون»)، فجهة Gemini تتقدّم عليها.
+     */
+    private fun weakPartyOf(original: String): String? {
+        val lines = original.lines().map { it.trim() }.filter { it.isNotEmpty() }.take(12)
         for (line in lines) {
             val originalWords = line.split(Regex("\\s+")).filter { it.isNotEmpty() }
             if (originalWords.size !in 1..3) continue

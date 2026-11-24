@@ -125,7 +125,7 @@ class ArchiveNamingTest {
     fun smartBase_fullData() {
         assertEquals(
             "فاتورة_شركة-الأمل_2026-09-25_345ر.س",
-            ArchiveNaming.smartBase("فاتورة", "شركة الأمل", "25/09/2026", "345.00", "ر.س", "2026-01-01")
+            ArchiveNaming.smartBase("فاتورة", "شركة الأمل", "25/09/2026", "345.00", "ر.س", "2026-12-31")
         )
     }
 
@@ -140,21 +140,21 @@ class ArchiveNamingTest {
     @Test
     fun smartBase_amountOnly_cleansThousandsSeparatorsAndHindiDigits() {
         assertEquals(
-            "فاتورة_2026-01-01_1250.5",
-            ArchiveNaming.smartBase("فاتورة", null, null, "١٬٢٥٠٫٥٠", null, "2026-01-01")
+            "فاتورة_2026-12-31_1250.5",
+            ArchiveNaming.smartBase("فاتورة", null, null, "١٬٢٥٠٫٥٠", null, "2026-12-31")
         )
     }
 
     @Test
     fun smartBase_noVendorAndNoAmount_returnsNull_soFileKeepsItsName() {
-        assertNull(ArchiveNaming.smartBase("فاتورة", null, "25/09/2026", null, "ر.س", "2026-01-01"))
-        assertNull(ArchiveNaming.smartBase("فاتورة", "   ", null, "abc", null, "2026-01-01"))
+        assertNull(ArchiveNaming.smartBase("فاتورة", null, "25/09/2026", null, "ر.س", "2026-12-31"))
+        assertNull(ArchiveNaming.smartBase("فاتورة", "   ", null, "abc", null, "2026-12-31"))
     }
 
     @Test
     fun smartBase_resultIsNeverAnAutoName() {
         // وإلا أُعيدت تسمية الملف في كل دورة تحليل
-        val name = ArchiveNaming.smartBase("فاتورة", "شركة", null, "10", null, "2026-01-01")!!
+        val name = ArchiveNaming.smartBase("فاتورة", "شركة", null, "10", null, "2026-12-31")!!
         assertFalse(ArchiveNaming.isAutoName("$name.jpg"))
     }
 
@@ -210,7 +210,7 @@ class ArchiveNamingTest {
     ) = ArchiveNaming.plannedBase(
         fileName = fileName, nameLocked = locked, ocrText = ocrText,
         vendor = vendor, invoiceDate = invoiceDate, amount = amount, currency = "ر.س",
-        fallbackDate = "2026-01-01",
+        fallbackDate = "2026-12-31",
     )
 
     @Test
@@ -235,7 +235,7 @@ class ArchiveNamingTest {
             planned("IMG_20260925_48213.jpg", ocrText = invoiceText)
         )
         assertEquals(
-            "حوالة_محمد-علي_2026-01-01_5000ريال_987654321",
+            "حوالة_محمد-علي_2026-12-31_5000ريال_987654321",
             planned("IMG_20260925_48213.jpg", ocrText = transferText)
         )
     }
@@ -279,6 +279,75 @@ class ArchiveNamingTest {
     }
 
     @Test
+    fun planned_badSmartName_isRebuilt_onlyWhenRefreshing() {
+        val bad = "حوالة_إلى_2026-11-22_الي.webp"
+        assertTrue(ArchiveNaming.isSmartName(bad))
+        assertFalse(ArchiveNaming.isSmartName("عقد المحل.jpg"))
+        // بلا تحديث: الاسم الذكي يبقى كما كان (السلوك القديم)
+        assertNull(planned(bad, ocrText = transferText))
+        assertEquals(
+            "حوالة_محمد-علي_2026-12-31_5000ريال_987654321",
+            ArchiveNaming.plannedBase(
+                fileName = bad, nameLocked = false, ocrText = transferText,
+                vendor = null, invoiceDate = null, amount = null, currency = null,
+                fallbackDate = "2026-12-31", refreshSmartName = true,
+            )
+        )
+    }
+
+    @Test
+    fun planned_refresh_withNothingReliable_dropsTheWrongPartyAndNumber() {
+        // نص لقطة محفظة: عناوين حقول بلا قيم — يبقى النوع والتاريخ فقط
+        val labelsOnly = "حوالات\nرقم الحوالة / كود العملية\nإلى\nمن محفظة\nمرجع المصدر\nالمرسل"
+        assertEquals(
+            "حوالة_2026-11-22",
+            ArchiveNaming.plannedBase(
+                fileName = "حوالة_إلى_2026-11-22_الي.webp", nameLocked = false, ocrText = labelsOnly,
+                vendor = null, invoiceDate = null, amount = null, currency = null,
+                fallbackDate = "2026-11-22", refreshSmartName = true,
+            )
+        )
+    }
+
+    @Test
+    fun planned_refresh_oldLongNumber_isNotMistakenForDuplicateSuffix() {
+        // كان يبقى «مستند_2026-11-22_777700239» لأن الجوال عُدّ لاحقة تكرار مثل _1
+        assertEquals(
+            "مستند_خدمات-الدواجن_2026-11-22",
+            ArchiveNaming.plannedBase(
+                fileName = "مستند_2026-11-22_777700239.webp", nameLocked = false,
+                ocrText = "خدمات الدواجن\nرقم الحركة: <= 777700239 - 777002134:",
+                vendor = null, invoiceDate = null, amount = null, currency = null,
+                fallbackDate = "2026-11-22", refreshSmartName = true,
+            )
+        )
+    }
+
+    @Test
+    fun invisibleDirectionMarks_areRemovedFromNames() {
+        assertEquals("إيصال_ولي", ArchiveNaming.sanitize("إيصال_‏ولي‎"))
+        assertEquals("بيانات-الحركة", ArchiveNaming.part("‏بيانات الحركة‎"))
+    }
+
+    @Test
+    fun planned_refresh_doesNotChurnACorrectNameOrItsDuplicateSuffix() {
+        fun refresh(file: String) = ArchiveNaming.plannedBase(
+            fileName = file, nameLocked = false, ocrText = transferText,
+            vendor = null, invoiceDate = null, amount = null, currency = null,
+            fallbackDate = "2026-12-31", refreshSmartName = true,
+        )
+        assertNull(refresh("حوالة_محمد-علي_2026-12-31_5000ريال_987654321.webp"))
+        assertNull(refresh("حوالة_محمد-علي_2026-12-31_5000ريال_987654321_1.webp"))
+        assertNull(
+            ArchiveNaming.plannedBase(
+                fileName = "حوالة_إلى_2026-11-22_الي.webp", nameLocked = true, ocrText = transferText,
+                vendor = null, invoiceDate = null, amount = null, currency = null,
+                fallbackDate = "2026-12-31", refreshSmartName = true,
+            )
+        )
+    }
+
+    @Test
     fun planned_fullNameFromText_thenStops() {
         val named = planned("IMG_20260925_48213.jpg", ocrText = invoiceText, vendor = "شركة الأمل")!!
         assertEquals("فاتورة_شركة-الأمل_2026-09-25_345ريال_12345", named)
@@ -292,7 +361,7 @@ class ArchiveNamingTest {
             ArchiveNaming.plannedBase(
                 fileName = "مستند_20260925_48213.jpg", nameLocked = false, ocrText = invoiceText,
                 vendor = null, invoiceDate = null, amount = null, currency = null,
-                fallbackDate = "2026-01-01", pageNumber = 2,
+                fallbackDate = "2026-12-31", pageNumber = 2,
             )
         )
     }

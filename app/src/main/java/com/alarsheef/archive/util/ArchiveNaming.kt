@@ -16,6 +16,9 @@ import com.alarsheef.archive.ai.DocumentContentGate
 object ArchiveNaming {
 
     private val ILLEGAL = Regex("[\\\\/:*?\"<>|\\p{Cntrl}\\u061F\\u060C\\u061B]")
+
+    /** محارف اتجاه وعرض صفري ينقلها OCR من النص (U+200F…): لا تُرى لكنها تفسد الاسم والبحث. */
+    private val INVISIBLE = Regex("[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]")
     private val SPACES = Regex("\\s+")
     private val UNDERSCORES = Regex("_{2,}")
 
@@ -38,7 +41,7 @@ object ArchiveNaming {
      * حتى يبقى «_» فاصلاً بين الحقول.
      */
     fun part(raw: String, maxLen: Int = 40): String {
-        val cleaned = ILLEGAL.replace(raw.replace('_', ' '), " ")
+        val cleaned = ILLEGAL.replace(INVISIBLE.replace(raw, "").replace('_', ' '), " ")
         val hyphened = SPACES.replace(cleaned.trim(), "-")
         val collapsed = Regex("-{2,}").replace(hyphened, "-")
         return collapsed.trim('-', '.', ' ').take(maxLen).trim('-', '.', ' ')
@@ -47,7 +50,7 @@ object ArchiveNaming {
     /** ينظّف نصًا ليصلح اسم ملف: بلا محارف ممنوعة، المسافات → "_"، وطول محدود. */
     fun sanitize(raw: String, maxLen: Int = 80): String {
         // استبدال لا حذف: "الأمل/للتجارة" ← "الأمل للتجارة" لا "الأملللتجارة"
-        val cleaned = ILLEGAL.replace(raw, " ")
+        val cleaned = ILLEGAL.replace(INVISIBLE.replace(raw, ""), " ")
         val joined = SPACES.replace(cleaned.trim(), "_")
         val collapsed = UNDERSCORES.replace(joined, "_")
         return collapsed.trim('_', '.', ' ').take(maxLen).trim('_', '.', ' ')
@@ -56,6 +59,30 @@ object ArchiveNaming {
     /** هل الاسم (بلا امتداد) من توليد التطبيق نفسه؟ */
     fun isAutoName(fileName: String): Boolean =
         AUTO_NAME.matches(fileName.substringBeforeLast('.'))
+
+    private val SMART_DATE = Regex("_\\d{4}-\\d{2}-\\d{2}(?:_|$)")
+
+    /**
+     * اسم ذكي بناه التطبيق (`النوع_..._yyyy-MM-dd_...`). يجوز إعادة بنائه حين تصل بيانات أدق
+     * (رد Gemini أو قارئ أصلح)؛ الاسم الذي كتبه المستخدم لا يحمل هذا الشكل ويُقفل عادةً.
+     */
+    fun isSmartName(fileName: String): Boolean {
+        val base = fileName.substringBeforeLast('.')
+        return !isAutoName(fileName) && labelOf(fileName) != null && SMART_DATE.containsMatchIn(base)
+    }
+
+    /** اسم مؤقت بالنوع نفسه: يجعل [plannedBase] يبني الاسم من جديد كأن الملف لم يُسمَّ بعد. */
+    private fun autoPlaceholder(fileName: String): String {
+        val label = labelOf(fileName) ?: "مستند"
+        return label + "_00000000_0." + fileName.substringAfterLast('.', "jpg")
+    }
+
+    /** نفس الاسم، أو هو مع لاحقة تمييز `_N` أضافها منع التكرار: لا إعادة تسمية (وإلا تتأرجح بين _1 و_2). */
+    private fun sameBase(fileName: String, planned: String): Boolean {
+        val current = fileName.substringBeforeLast('.')
+        // لاحقة منع التكرار قصيرة (_1.._999)؛ «_777700239» رقم قديم في الاسم لا لاحقة
+        return current == planned || Regex(Regex.escape(planned) + "_\\d{1,3}").matches(current)
+    }
 
     /** بادئة النوع المحفوظة في اسم تلقائي، أو null لو الاسم IMG_ أو غير تلقائي. */
     fun labelOf(fileName: String): String? {
@@ -141,15 +168,34 @@ object ArchiveNaming {
         fallbackDate: String,
         userTypes: List<DocumentName.UserType> = emptyList(),
         pageNumber: Int = 1,
+        refreshSmartName: Boolean = false,
     ): String? {
-        if (nameLocked || !isAutoName(fileName)) return null
+        if (nameLocked) return null
+        val refreshing = refreshSmartName && isSmartName(fileName)
+        if (!isAutoName(fileName) && !refreshing) return null
+        if (refreshing) {
+            val planned = plannedBase(
+                autoPlaceholder(fileName), false, ocrText, vendor, invoiceDate, amount, currency,
+                fallbackDate, userTypes, pageNumber,
+            ) ?: run {
+                // لا شيء موثوق يُبنى منه اسم كامل: النوع والتاريخ فقط، بدل إبقاء جهة/رقم خاطئين
+                // مثل «حوالة_إلى_..._الي» قرأهما القارئ القديم من عناوين الحقول.
+                val read = ocrText?.takeIf { it.isNotBlank() }?.let { DocumentName.read(it, userTypes) }
+                val label = read?.type?.takeIf { it != "مستند" } ?: labelOf(fileName) ?: "مستند"
+                val date = read?.date ?: normalizeDate(invoiceDate) ?: fallbackDate
+                withPage(sanitize(part(label, 32) + "_" + date), pageNumber)
+            }
+            return planned.takeUnless { sameBase(fileName, it) }
+        }
+        val currentLabel = labelOf(fileName)
         val fields = ocrText?.takeIf { it.isNotBlank() }?.let { DocumentName.read(it, userTypes) }
+            // الورقة لم تكشف نوعها (OCR ضعيف) لكن الملف يحمل نوعًا معروفًا: لا يُخفَّض إلى «مستند»
+            ?.let { if (it.type == "مستند" && currentLabel != null && currentLabel != "مستند") it.copy(type = currentLabel) else it }
         if (fields != null && (fields.isRich() || !vendor.isNullOrBlank() || !amount.isNullOrBlank())) {
             DocumentName.compose(
                 fields, fallbackDate, pageNumber, vendor, invoiceDate, amount, currency
             )?.let { return it }
         }
-        val currentLabel = labelOf(fileName)
         val label = currentLabel ?: fields?.type?.takeIf { it != "مستند" } ?: typeLabelFromText(ocrText)
         smartBase(label ?: "مستند", vendor, invoiceDate, amount, currency, fallbackDate)
             ?.let { return withPage(it, pageNumber) }

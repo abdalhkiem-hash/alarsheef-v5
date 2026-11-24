@@ -9,7 +9,7 @@ import com.alarsheef.archive.ai.GeminiRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import java.time.LocalDate
+
 
 /** استهلاك الحصة السحابية اليومية (لعرضها في الإعدادات). */
 data class GeminiQuota(val used: Long, val limit: Int)
@@ -41,6 +41,8 @@ class SettingsPreferences(private val context: Context) {
         val GEMINI_USE_PRO = booleanPreferencesKey("gemini_use_pro")
         /** تاريخ الحصة الحالية (يُعاد ضبطها كل يوم). */
         val GEMINI_QUOTA_DATE = stringPreferencesKey("gemini_quota_date")
+        /** أُعيد بناء الأسماء الذكية المحلية بعد إصلاح قارئ الحقول (24/11/2026). */
+        val LOCAL_NAMES_V2_DONE = booleanPreferencesKey("local_names_v4_done")
         /** عدد الاستدعاءات السحابية المستهلكة اليوم. */
         val GEMINI_QUOTA_USED = longPreferencesKey("gemini_quota_used")
         /** معرّف شجرة SAF لمجلد وثائق واتساب. */
@@ -65,7 +67,7 @@ class SettingsPreferences(private val context: Context) {
     val oneDrivePath: Flow<String> = context.appDataStore.data.map { it[Keys.ONEDRIVE_PATH] ?: com.alarsheef.archive.onedrive.OneDriveProtocol.DEFAULT_PATH }
     val importAutoCrop: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_CROP] ?: true }
     val importAutoEnhance: Flow<Boolean> = context.appDataStore.data.map { it[Keys.IMPORT_AUTO_ENHANCE] ?: true }
-    val backupEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.BACKUP_ENABLED] ?: false }
+    val backupEnabled: Flow<Boolean> = context.appDataStore.data.map { it[Keys.BACKUP_ENABLED] ?: true }
     val backupFrequency: Flow<String> = context.appDataStore.data.map { it[Keys.BACKUP_FREQUENCY] ?: "daily" }
     val backupFolderUri: Flow<String?> = context.appDataStore.data.map { it[Keys.BACKUP_FOLDER_URI] }
     val lastBackupAt: Flow<Long> = context.appDataStore.data.map { it[Keys.LAST_BACKUP_AT] ?: 0L }
@@ -81,7 +83,7 @@ class SettingsPreferences(private val context: Context) {
     val geminiUsePro: Flow<Boolean> = context.appDataStore.data.map { it[Keys.GEMINI_USE_PRO] ?: false }
     /** استهلاك اليوم الحالي من الاستدعاءات السحابية (يصفَّر تلقائيًا يوميًا). */
     val geminiQuota: Flow<GeminiQuota> = context.appDataStore.data.map { prefs ->
-        val today = LocalDate.now().toString()
+        val today = com.alarsheef.archive.ai.GeminiCallPolicy.quotaDay(System.currentTimeMillis())
         val used = if (prefs[Keys.GEMINI_QUOTA_DATE] == today) prefs[Keys.GEMINI_QUOTA_USED] ?: 0L else 0L
         GeminiQuota(used = used, limit = GeminiRepository.DAILY_LIMIT)
     }
@@ -107,6 +109,8 @@ class SettingsPreferences(private val context: Context) {
         context.appDataStore.edit { if (v == null) it.remove(Keys.BACKUP_FOLDER_URI) else it[Keys.BACKUP_FOLDER_URI] = v }
     }
     suspend fun setLastBackupAt(v: Long) { context.appDataStore.edit { it[Keys.LAST_BACKUP_AT] = v } }
+    val localNamesV2Done: Flow<Boolean> = context.appDataStore.data.map { it[Keys.LOCAL_NAMES_V2_DONE] ?: false }
+    suspend fun setLocalNamesV2Done() { context.appDataStore.edit { it[Keys.LOCAL_NAMES_V2_DONE] = true } }
     suspend fun setExcludePersonalPhotos(v: Boolean) { context.appDataStore.edit { it[Keys.EXCLUDE_PERSONAL_PHOTOS] = v } }
     suspend fun setDocumentsOnly(v: Boolean) { context.appDataStore.edit { it[Keys.DOCUMENTS_ONLY] = v } }
     suspend fun setImportAutoCrop(v: Boolean) { context.appDataStore.edit { it[Keys.IMPORT_AUTO_CROP] = v } }
@@ -122,7 +126,7 @@ class SettingsPreferences(private val context: Context) {
 
     /** هل بقي في حصة اليوم مكان لنداء، بدون خصم. */
     suspend fun hasGeminiQuota(limit: Int): Boolean {
-        val today = LocalDate.now().toString()
+        val today = com.alarsheef.archive.ai.GeminiCallPolicy.quotaDay(System.currentTimeMillis())
         val prefs = context.appDataStore.data.first()
         val used = if (prefs[Keys.GEMINI_QUOTA_DATE] != today) 0L else prefs[Keys.GEMINI_QUOTA_USED] ?: 0L
         return used < limit
@@ -139,7 +143,7 @@ class SettingsPreferences(private val context: Context) {
      * @return true إذا استُهلكت المحاولة، false إذا انتهى حد اليوم.
      */
     suspend fun tryConsumeGeminiQuota(limit: Int): Boolean {
-        val today = LocalDate.now().toString()
+        val today = com.alarsheef.archive.ai.GeminiCallPolicy.quotaDay(System.currentTimeMillis())
         var allowed = false
         context.appDataStore.edit { prefs ->
             if (prefs[Keys.GEMINI_QUOTA_DATE] != today) {

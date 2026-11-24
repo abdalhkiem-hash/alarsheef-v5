@@ -32,7 +32,7 @@ object GeminiHealth {
         Status.KEY_MISSING -> "المفتاح غير مضبوط في local.properties"
         Status.KEY_REJECTED -> "المفتاح مرفوض أو غير صالح"
         Status.MODEL_NOT_FOUND -> "النموذج غير متاح لهذا المفتاح"
-        Status.RATE_LIMITED -> "تجاوز الحد المسموح (قد لا تشمل الحصة المجانية هذا النموذج)"
+        Status.RATE_LIMITED -> "نفدت الحصة المجانية (20 طلبًا يوميًا لكل نموذج) — تتجدد قرابة 11 صباحًا بتوقيتك، أو فعّل الفوترة"
         Status.UNAVAILABLE -> "خدمة Google مشغولة، أعد المحاولة لاحقًا"
         Status.NETWORK -> "لا اتصال بالإنترنت"
         Status.OTHER -> "رد غير متوقع"
@@ -45,11 +45,13 @@ object GeminiHealth {
             val ping = GeminiRepository.ping(model)
             return ModelResult(model, classify(ping.httpCode, ping.networkFailed), ping.httpCode, ping.millis)
         }
-        val primary = run(GeminiRepository.model())
-        val results = if (primary.status == Status.MODEL_NOT_FOUND && primary.model != GeminiRepository.MODEL_FALLBACK) {
-            listOf(primary, run(GeminiRepository.MODEL_FALLBACK))
-        } else {
-            listOf(primary)
+        // يمشي على السلسلة حتى أول نموذج يعمل — هو الذي سيُستخدم فعلًا. المفتاح المرفوض أو
+        // انقطاع الشبكة يوقف الفحص لأن بقية النماذج ستفشل للسبب نفسه.
+        val results = ArrayList<ModelResult>()
+        for (model in GeminiRepository.MODEL_CHAIN) {
+            val result = run(model)
+            results += result
+            if (result.status == Status.OK || result.status == Status.KEY_REJECTED || result.status == Status.NETWORK) break
         }
         return Report(true, results)
     }

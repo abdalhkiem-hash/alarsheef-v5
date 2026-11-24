@@ -43,6 +43,9 @@ object GeminiClassifier {
             usePro = usePro,
             jsonSchema = if (includeText) SCHEMA_WITH_TEXT else SCHEMA,
             maxImageDimension = if (includeText) 1600 else 1024,
+            // رد لا يُفهم (JSON ناقص/بلا وسوم) يُعدّ فشلًا لذلك النموذج فيُجرَّب التالي
+            // وحين طُلب النص فالرد بلا fullText ناقص (يفعله النموذج الخفيف أحيانًا) — الاسم يُبنى منه
+            accept = { reply -> parse(reply)?.let { !includeText || !it.text.isNullOrBlank() } == true },
         ) ?: return null
         return parse(json)
     }

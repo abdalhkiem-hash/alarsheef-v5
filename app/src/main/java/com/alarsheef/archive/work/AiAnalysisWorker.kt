@@ -91,6 +91,16 @@ class AiAnalysisWorker(
         val userTypes = repository.documentTypeRules()
         val localRenamed = applyLocalTypeNames(repository, userTypes)
         if (localRenamed > 0) Log.i(TAG, "تسمية محلية من النص المحفوظ: $localRenamed ملف")
+        if (!prefs.localNamesV2Done.first()) {
+            // مرة واحدة: أسماء بُنيت بالقارئ القديم («حوالة_إلى_..._الي») تُبنى من جديد بالمصحَّح
+            var rebuilt = 0
+            for (image in repository.smartNamedFromLocalText()) {
+                val text = repository.ocrTextFor(image.id) ?: continue
+                if (applyPlannedName(repository, image, text, invoice = null, userTypes, refresh = true)) rebuilt++
+            }
+            prefs.setLocalNamesV2Done()
+            Log.i(TAG, "إعادة بناء الأسماء المحلية: $rebuilt ملف")
+        }
         if (!ocrEnabled && !labelsEnabled && !facesEnabled) return Result.success()
 
         fun cloudAvailable(): Boolean = cloudReady && !GeminiRepository.rateLimited
@@ -155,6 +165,8 @@ class AiAnalysisWorker(
 
             // بيانات الفاتورة من السحابة + نص الصورة: مُدخلا التسمية في آخر خطوة
             var invoice: InvoiceInfo? = null
+            // نجح التصنيف السحابي لهذه الصورة: يُعاد بناء اسمها الذكي ولو كان مبنيًا من قبل
+            var cloudClassified = false
             var ocrText: String? = null
             try {
                 // تمريرة واحدة لاكتشاف الوجوه — تستخدم للإشارة في التصنيف وللتجميع معًا
@@ -195,7 +207,9 @@ class AiAnalysisWorker(
                     if (canCallCloud() && (provenDocument || needsCloudClassification(local))) {
                         // نص Gemini يتقدّم على المحلي للمستند المثبت: قرأ في القياس كل الحالات بلا خطأ بينما يفوّت
                         // المحلي أسطرًا قد تبدو قراءته سليمة. يُطلب في النداء نفسه (بلا استدعاء إضافي).
-                        val wantText = ocrEnabled && (!textSaved || provenDocument)
+                        // الـOCR المحلي ضعيف: النص يُطلب دائمًا مع التصنيف (النداء نفسه، بلا خصم إضافي)
+                        // فيُبنى الاسم من قراءة Gemini الأدق لا من القراءة المحلية.
+                        val wantText = ocrEnabled
                         GeminiClassifier.classify(file, usePro, includeText = wantText)?.let { result ->
                             commitQuota()
                             cloudCalls++
@@ -221,6 +235,7 @@ class AiAnalysisWorker(
                                 GeminiRepository.model(usePro)
                             )
                             invoice = result.invoice
+                            cloudClassified = true
                         }
                     }
                     if (final.isNotEmpty()) repository.saveLabels(image.id, final)
@@ -288,7 +303,7 @@ class AiAnalysisWorker(
 
             // آخر خطوة للصورة: إعادة التسمية (بعد انتهاء كل استخدامات الملف بمساره القديم).
             // اسم ذكي كامل إن أعادت السحابة جهة/مبلغ، وإلا بادئة النوع من النص بدل IMG.
-            if (applyPlannedName(repository, image, ocrText, invoice, userTypes)) renamed++
+            if (applyPlannedName(repository, image, ocrText, invoice, userTypes, refresh = cloudClassified)) renamed++
 
             repository.markAiAnalyzed(image.id)
             processed++
@@ -320,6 +335,7 @@ class AiAnalysisWorker(
         ocrText: String?,
         invoice: InvoiceInfo?,
         userTypes: List<DocumentName.UserType>,
+        refresh: Boolean = false,
     ): Boolean {
         val base = ArchiveNaming.plannedBase(
             fileName = image.fileName,
@@ -334,6 +350,7 @@ class AiAnalysisWorker(
             ),
             userTypes = userTypes,
             pageNumber = ImportRules.pageNumberOf(image.originalPath, image.originalName),
+            refreshSmartName = refresh,
         ) ?: return false
         val updated = runCatching { repository.renameImage(image, base, lock = false) }.getOrNull()
         if (updated == null) Log.w(TAG, "تعذّرت إعادة تسمية ${image.fileName} إلى $base")
@@ -367,7 +384,8 @@ class AiAnalysisWorker(
             if (!file.exists()) continue
             if (!prefs.hasGeminiQuota(GeminiRepository.DAILY_LIMIT)) break
 
-            val result = GeminiClassifier.classify(file, usePro)
+            // النص الكامل يُطلب في النداء نفسه: يحل محل القراءة المحلية الضعيفة ويُبنى منه الاسم
+            val result = GeminiClassifier.classify(file, usePro, includeText = true)
             if (result == null) {
                 if (GeminiRepository.rateLimited) break
                 if (++failures >= MAX_RETRY_FAILURES) break
@@ -377,7 +395,10 @@ class AiAnalysisWorker(
             failures = 0
             classified++
             repository.saveCloudMeta(image.id, result.description, result.invoice, GeminiRepository.model(usePro))
-            if (applyPlannedName(repository, image, repository.ocrTextFor(image.id), result.invoice, userTypes)) renamed++
+            val cloudText = result.text?.takeIf { it.isNotBlank() && !ImportGate.isNoTextReply(it) }
+            if (cloudText != null) repository.saveOcrText(image.id, cloudText)
+            val text = cloudText ?: repository.ocrTextFor(image.id)
+            if (applyPlannedName(repository, image, text, result.invoice, userTypes, refresh = true)) renamed++
         }
         Log.i(TAG, "إعادة محاولة التسمية: ${candidates.size} مرشّح، صُنِّف $classified، أُعيدت تسمية $renamed")
     }
