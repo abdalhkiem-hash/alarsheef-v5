@@ -34,6 +34,7 @@ import com.alarsheef.archive.data.repository.ImportResult
 import com.alarsheef.archive.util.FeatureFlags
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -165,10 +166,76 @@ fun AddFab(
         }
     }
 
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            scope.launch { showResult(repository.importFromUri(uri, SourceApp.MANUAL_IMPORT), null) }
+    val settingsPrefs = remember { com.alarsheef.archive.settings.SettingsPreferences(context) }
+    var pendingGalleryUris by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
+    var cropOption by remember { mutableStateOf(true) }
+    var enhanceOption by remember { mutableStateOf(true) }
+
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
+        if (uris.isNotEmpty()) {
+            scope.launch {
+                cropOption = settingsPrefs.importAutoCrop.first()
+                enhanceOption = settingsPrefs.importAutoEnhance.first()
+                pendingGalleryUris = uris
+            }
         }
+    }
+
+    // ماسح مستندات ML Kit (قصّ تلقائي + تصحيح المنظور + تحسين) — يعيد صفحات JPEG
+    val mlKitScanLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { activityResult ->
+        if (activityResult.resultCode == android.app.Activity.RESULT_OK) {
+            val scanResult = com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+                .fromActivityResultIntent(activityResult.data)
+            val uris = scanResult?.pages?.map { it.imageUri }.orEmpty()
+            scope.launch {
+                val bitmaps = withContext(Dispatchers.IO) {
+                    uris.mapNotNull { uri ->
+                        val tmp = File(context.cacheDir, "mlkit_${System.nanoTime()}.jpg")
+                        try {
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                tmp.outputStream().use { input.copyTo(it) }
+                            }
+                            decodeScanPage(tmp)
+                        } catch (e: Exception) {
+                            null
+                        } finally {
+                            tmp.delete()
+                        }
+                    }
+                }
+                if (bitmaps.isNotEmpty()) {
+                    scannedPageBitmaps = bitmaps
+                    showScannerSaveDialog = true
+                } else {
+                    snackbarHostState.showSnackbar("تعذّرت قراءة الصفحات الممسوحة")
+                }
+            }
+        }
+    }
+
+    fun startMlKitScan() {
+        val activity = context as? android.app.Activity
+        if (activity == null) {
+            scope.launch { snackbarHostState.showSnackbar("تعذّر فتح الماسح") }
+            return
+        }
+        val options = com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true)
+            .setPageLimit(10)
+            .setResultFormats(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+        com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(options)
+            .getStartScanIntent(activity)
+            .addOnSuccessListener { sender ->
+                mlKitScanLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(sender).build())
+            }
+            .addOnFailureListener {
+                // خدمات Google Play غير متاحة: نرجع إلى الالتقاط العادي
+                val (file, uri) = repository.createCameraCaptureTarget()
+                pendingCaptureFile = file
+                documentScannerLauncher.launch(uri)
+            }
     }
 
     Box {
@@ -196,7 +263,7 @@ fun AddFab(
                 }
             )
             ArsheefMenuItem(
-                text = "استيراد — من المعرض/الجهاز",
+                text = "استيراد — عدة صور من المعرض/الجهاز",
                 icon = Icons.Filled.PhotoLibrary,
                 onClick = {
                     menuExpanded = false
@@ -208,15 +275,7 @@ fun AddFab(
                 icon = Icons.Filled.DocumentScanner,
                 onClick = {
                     menuExpanded = false
-                    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-                    if (granted) {
-                        val (file, uri) = repository.createCameraCaptureTarget()
-                        pendingCaptureFile = file
-                        documentScannerLauncher.launch(uri)
-                    } else {
-                        scanAfterPermission = true
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
+                    startMlKitScan()
                 }
             )
             if (FeatureFlags.SUB_FOLDERS_ENABLED) {
@@ -262,6 +321,43 @@ fun AddFab(
                 }
             )
         }
+    }
+    if (pendingGalleryUris.isNotEmpty()) {
+        ImportOptionsDialog(
+            initialCrop = cropOption,
+            initialEnhance = enhanceOption,
+            onCropChange = { v -> scope.launch { settingsPrefs.setImportAutoCrop(v) } },
+            onEnhanceChange = { v -> scope.launch { settingsPrefs.setImportAutoEnhance(v) } },
+            onConfirm = { crop, enhance ->
+                // الحوار يستدعي onDismiss بعد onConfirm فورًا — نلتقط القائمة قبل تفريغها
+                val uris = pendingGalleryUris
+                scope.launch {
+                    var added = 0
+                    var duplicates = 0
+                    var failed = 0
+                    var enhanced = 0
+                    for (uri in uris) {
+                        when (repository.importFromUri(uri, SourceApp.MANUAL_IMPORT)) {
+                            is ImportResult.Added -> {
+                                added++
+                                if ((crop || enhance) && repository.importEnhancedFromUri(uri, crop, enhance)) enhanced++
+                            }
+                            is ImportResult.Duplicate -> duplicates++
+                            is ImportResult.Failed -> failed++
+                        }
+                    }
+                    if (added > 0) com.alarsheef.archive.work.AiAnalysisScheduler.start(context)
+                    val parts = buildList {
+                        add("أُضيف $added من ${uris.size}")
+                        if (enhanced > 0) add("مع $enhanced نسخة محسّنة")
+                        if (duplicates > 0) add("$duplicates مكرر")
+                        if (failed > 0) add("$failed تعذّر")
+                    }
+                    snackbarHostState.showSnackbar(parts.joinToString(" — "))
+                }
+            },
+            onDismiss = { pendingGalleryUris = emptyList() }
+        )
     }
     if (showMergeDialog) {
         MergePagesDialog(
