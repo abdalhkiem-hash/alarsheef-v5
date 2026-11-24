@@ -25,6 +25,7 @@ object BackupScheduler {
             .build()
 
         val request = PeriodicWorkRequestBuilder<LocalBackupWorker>(hours, TimeUnit.HOURS)
+            .setInitialDelay(delayToEndOfDayMillis(), TimeUnit.MILLISECONDS)
             .setConstraints(constraints)
             .build()
 
@@ -33,6 +34,16 @@ object BackupScheduler {
             ExistingPeriodicWorkPolicy.UPDATE,
             request
         )
+    }
+
+    /** المدة حتى 23:30 بالتوقيت المحلي (غدًا لو فات الوقت) — نهاية اليوم. */
+    internal fun delayToEndOfDayMillis(now: java.util.Calendar = java.util.Calendar.getInstance()): Long {
+        val target = (now.clone() as java.util.Calendar).apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 23); set(java.util.Calendar.MINUTE, 30)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+            if (!after(now)) add(java.util.Calendar.DAY_OF_MONTH, 1)
+        }
+        return target.timeInMillis - now.timeInMillis
     }
 
     /** نسخة احتياطية فورية لمرة واحدة — تُستخدم عند تفعيل الإعداد أول مرة */
